@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --bg: #f8fafc;
+    --surface: #ffffff;
+    --surface-2: #f1f5f9;
+    --border: #e2e8f0;
+    --text: #0f172a;
+    --muted: #64748b;
+    --primary: #4f46e5;
+    --primary-fg: #ffffff;
+    --accent: #06b6d4;
+    --success: #16a34a;
+    --warning: #d97706;
+    --danger: #dc2626;
+    --info: #2563eb;
+  }
+
+  :root.dark {
+    color-scheme: dark;
+    --bg: #0b1020;
+    --surface: #131a2e;
+    --surface-2: #1b2338;
+    --border: #26304a;
+    --text: #e6ebf5;
+    --muted: #94a3b8;
+    --primary: #6366f1;
+    --primary-fg: #ffffff;
+    --accent: #22d3ee;
+    --success: #4ade80;
+    --warning: #fbbf24;
+    --danger: #f87171;
+    --info: #60a5fa;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-bg text-text;
+    font-feature-settings: "rvrn";
+  }
+
+  input, textarea, select {
+    @apply text-base;
+  }
+}
+
+@layer components {
+  .focus-ring {
+    @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary;
+  }
+
+  .transition-fast {
+    @apply transition-all duration-150;
+  }
+
+  .transition-base {
+    @apply transition-all duration-250;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
