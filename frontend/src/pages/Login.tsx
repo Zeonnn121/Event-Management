@@ -106,10 +106,8 @@ export default function LoginPage() {
                     useAuth.setState({ token: null, user: null });
                     navigate('/login', { replace: true });
                   });
-                  // Set auth state in Zustand store FIRST, then navigate
+                  // Set auth state; router will auto-redirect via the gate
                   setSession(mockToken, mockUser);
-                  // Small delay to ensure Zustand persists before router re-evaluates
-                  setTimeout(() => navigate('/', { replace: true }), 0);
                 }}
                 className="w-full"
               >
