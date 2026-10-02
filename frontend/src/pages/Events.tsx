@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -33,6 +33,7 @@ interface FiltersResponse {
 
 export default function EventsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [gridView, setGridView] = useState(true);
   const q = searchParams.get('q') ?? '';
   const year = searchParams.get('year') ?? '';
@@ -124,7 +125,7 @@ export default function EventsPage() {
     >
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-semibold text-text">Events</h1>
-        <Button variant="primary">New Event</Button>
+        <Button variant="primary" onClick={() => navigate('/events/new')}>New Event</Button>
       </div>
 
       {/* Search and filters */}
@@ -214,7 +215,7 @@ export default function EventsPage() {
         >
           {events.map((event) => (
             <motion.div key={event.id} variants={variants.staggerItem}>
-              <Card className="cursor-pointer hover:shadow-md transition-shadow">
+              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/events/${event.id}`)}>
                 <CardContent className="pt-6">
                   <div className="flex items-start justify-between mb-4">
                     <h3 className="font-semibold text-text line-clamp-2">{event.title}</h3>

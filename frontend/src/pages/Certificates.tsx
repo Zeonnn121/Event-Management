@@ -8,7 +8,6 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
 import { variants } from '@/lib/motion';
 import { apiFetch } from '@/lib/api';
 import type { Certificate } from '@/lib/types';
@@ -108,49 +107,38 @@ export default function CertificatesPage() {
         >
           <Card>
             <CardContent className="pt-6 overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    {viewMode === 'event' ? (
-                      <>
-                        <TableHead>Event</TableHead>
-                        <TableHead>Participant</TableHead>
-                      </>
-                    ) : (
-                      <>
-                        <TableHead>Participant</TableHead>
-                        <TableHead>Event</TableHead>
-                      </>
-                    )}
-                    <TableHead>Status</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead>Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+              <div className="inline-block min-w-full rounded-lg border border-border">
+                <div className="bg-surface-2 grid grid-cols-5 gap-4 p-4 font-medium text-muted text-sm">
+                  <div>{viewMode === 'event' ? 'Event' : 'Participant'}</div>
+                  <div>{viewMode === 'event' ? 'Participant' : 'Event'}</div>
+                  <div>Status</div>
+                  <div>Created</div>
+                  <div>Action</div>
+                </div>
+                <div className="divide-y divide-border">
                   {certificates.map((cert) => (
-                    <motion.tr key={cert.id} variants={variants.staggerItem}>
-                      <TableCell>Event {cert.event_id}</TableCell>
-                      <TableCell>Participant {cert.participant_id}</TableCell>
-                      <TableCell>
+                    <motion.div key={cert.id} variants={variants.staggerItem} className="grid grid-cols-5 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm">
+                      <div className="text-text">{viewMode === 'event' ? `Event ${cert.event_id}` : `Participant ${cert.participant_id}`}</div>
+                      <div className="text-text">{viewMode === 'event' ? `Participant ${cert.participant_id}` : `Event ${cert.event_id}`}</div>
+                      <div>
                         <Badge variant={cert.status === 'issued' ? 'success' : 'default'}>
                           {cert.status}
                         </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted">
+                      </div>
+                      <div className="text-muted">
                         {formatDate(cert.created_at)}
-                      </TableCell>
-                      <TableCell>
+                      </div>
+                      <div>
                         {cert.status === 'issued' && (
                           <Button size="sm" variant="ghost">
                             <Download className="h-4 w-4" />
                           </Button>
                         )}
-                      </TableCell>
-                    </motion.tr>
+                      </div>
+                    </motion.div>
                   ))}
-                </TableBody>
-              </Table>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </motion.div>

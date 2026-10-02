@@ -8,9 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Textarea } from '@/components/ui/Textarea';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
 import { Select } from '@/components/ui/Select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/Dialog';
 import { Upload, Download, Plus, Check, X } from 'lucide-react';
@@ -309,30 +307,30 @@ export default function EventDetailPage() {
                 />
               ) : (
                 <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Participant</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Registered</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
+                  <div className="inline-block min-w-full rounded-lg border border-border">
+                    <div className="bg-surface-2 grid grid-cols-4 gap-4 p-4 font-medium text-muted text-sm">
+                      <div>Participant</div>
+                      <div>Status</div>
+                      <div>Registered</div>
+                      <div></div>
+                    </div>
+                    <div className="divide-y divide-border">
                       {registrations.map((reg) => (
-                        <TableRow key={reg.id}>
-                          <TableCell>Participant {reg.participant_id}</TableCell>
-                          <TableCell>
+                        <div key={reg.id} className="grid grid-cols-4 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm">
+                          <div className="text-text">Participant {reg.participant_id}</div>
+                          <div>
                             <Badge variant={registrationStatusVariants[reg.status]}>
                               {reg.status}
                             </Badge>
-                          </TableCell>
-                          <TableCell className="text-sm text-muted">
+                          </div>
+                          <div className="text-muted">
                             {formatDate(reg.registered_date)}
-                          </TableCell>
-                        </TableRow>
+                          </div>
+                          <div></div>
+                        </div>
                       ))}
-                    </TableBody>
-                  </Table>
+                    </div>
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -374,28 +372,26 @@ export default function EventDetailPage() {
                     </div>
                   </div>
                   <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Participant</TableHead>
-                          <TableHead>Present</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
+                    <div className="inline-block min-w-full rounded-lg border border-border">
+                      <div className="bg-surface-2 grid grid-cols-2 gap-4 p-4 font-medium text-muted text-sm">
+                        <div>Participant</div>
+                        <div>Present</div>
+                      </div>
+                      <div className="divide-y divide-border">
                         {attendance.data.map((rec) => (
-                          <TableRow key={rec.participant_id}>
-                            <TableCell>Participant {rec.participant_id}</TableCell>
-                            <TableCell>
+                          <div key={rec.participant_id} className="grid grid-cols-2 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm">
+                            <div className="text-text">Participant {rec.participant_id}</div>
+                            <div>
                               {rec.present ? (
                                 <Badge variant="success">Present</Badge>
                               ) : (
                                 <Badge variant="danger">Absent</Badge>
                               )}
-                            </TableCell>
-                          </TableRow>
+                            </div>
+                          </div>
                         ))}
-                      </TableBody>
-                    </Table>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -436,32 +432,28 @@ export default function EventDetailPage() {
                 />
               ) : (
                 <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Uploaded By</TableHead>
-                        <TableHead>Action</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
+                  <div className="inline-block min-w-full rounded-lg border border-border">
+                    <div className="bg-surface-2 grid grid-cols-4 gap-4 p-4 font-medium text-muted text-sm">
+                      <div>Name</div>
+                      <div>Type</div>
+                      <div>Uploaded By</div>
+                      <div>Action</div>
+                    </div>
+                    <div className="divide-y divide-border">
                       {files.map((file) => (
-                        <TableRow key={file.id}>
-                          <TableCell className="font-medium">{file.file_name}</TableCell>
-                          <TableCell className="text-sm">{file.file_type}</TableCell>
-                          <TableCell className="text-sm text-muted">
-                            {file.uploaded_by_name}
-                          </TableCell>
-                          <TableCell>
+                        <div key={file.id} className="grid grid-cols-4 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm">
+                          <div className="font-medium text-text">{file.file_name}</div>
+                          <div className="text-muted">{file.file_type}</div>
+                          <div className="text-muted">{file.uploaded_by_name}</div>
+                          <div>
                             <Button size="sm" variant="ghost">
                               <Download className="h-4 w-4" />
                             </Button>
-                          </TableCell>
-                        </TableRow>
+                          </div>
+                        </div>
                       ))}
-                    </TableBody>
-                  </Table>
+                    </div>
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -487,38 +479,36 @@ export default function EventDetailPage() {
                 />
               ) : (
                 <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Participant</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Created</TableHead>
-                        <TableHead>Action</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
+                  <div className="inline-block min-w-full rounded-lg border border-border">
+                    <div className="bg-surface-2 grid grid-cols-4 gap-4 p-4 font-medium text-muted text-sm">
+                      <div>Participant</div>
+                      <div>Status</div>
+                      <div>Created</div>
+                      <div>Action</div>
+                    </div>
+                    <div className="divide-y divide-border">
                       {certificates.map((cert) => (
-                        <TableRow key={cert.id}>
-                          <TableCell>Participant {cert.participant_id}</TableCell>
-                          <TableCell>
+                        <div key={cert.id} className="grid grid-cols-4 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm">
+                          <div className="text-text">Participant {cert.participant_id}</div>
+                          <div>
                             <Badge variant={cert.status === 'issued' ? 'success' : 'default'}>
                               {cert.status}
                             </Badge>
-                          </TableCell>
-                          <TableCell className="text-sm text-muted">
+                          </div>
+                          <div className="text-muted">
                             {formatDate(cert.created_at)}
-                          </TableCell>
-                          <TableCell>
+                          </div>
+                          <div>
                             {cert.status === 'issued' && (
                               <Button size="sm" variant="ghost">
                                 <Download className="h-4 w-4" />
                               </Button>
                             )}
-                          </TableCell>
-                        </TableRow>
+                          </div>
+                        </div>
                       ))}
-                    </TableBody>
-                  </Table>
+                    </div>
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -560,12 +550,18 @@ export default function EventDetailPage() {
                     placeholder="Award winners, if any"
                     error={errors.winners?.message}
                   />
-                  <Textarea
-                    {...register('description')}
-                    label="Description"
-                    placeholder="Event summary and notes"
-                    error={errors.description?.message}
-                  />
+                  <div>
+                    <label className="block text-sm font-medium text-text mb-1.5">Description</label>
+                    <textarea
+                      {...register('description')}
+                      placeholder="Event summary and notes"
+                      rows={4}
+                      className="w-full px-3 py-2 rounded-md border border-border bg-surface text-text focus:outline-none focus:ring-2 focus:ring-primary transition-colors resize-none"
+                    />
+                    {errors.description?.message && (
+                      <p className="text-xs text-danger mt-1">{errors.description.message}</p>
+                    )}
+                  </div>
                   <Button type="submit" isLoading={isSubmitting}>
                     Save Outcome
                   </Button>

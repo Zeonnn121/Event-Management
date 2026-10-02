@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
 import { variants } from '@/lib/motion';
 import { apiFetch, apiFetchEnvelope } from '@/lib/api';
 import type { Participant, ApiResponse } from '@/lib/types';
@@ -32,6 +31,7 @@ interface ParticipantsFilters {
 
 export default function ParticipantsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const q = searchParams.get('q') ?? '';
   const department = searchParams.get('department') ?? '';
   const year = searchParams.get('year') ?? '';
@@ -110,7 +110,7 @@ export default function ParticipantsPage() {
     >
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-semibold text-text">Participants</h1>
-        <Button variant="primary">Add Participant</Button>
+        <Button variant="primary" onClick={() => navigate('/participants/new')}>Add Participant</Button>
       </div>
 
       {/* Search and filters */}
@@ -169,7 +169,7 @@ export default function ParticipantsPage() {
         <EmptyState
           title="No participants found"
           description={q || department || year ? 'Try adjusting your filters.' : 'Add your first participant to get started.'}
-          action={<Button variant="primary">Add Participant</Button>}
+          action={<Button variant="primary" onClick={() => navigate('/participants/new')}>Add Participant</Button>}
         />
       ) : (
         <motion.div
@@ -179,32 +179,33 @@ export default function ParticipantsPage() {
         >
           <Card>
             <CardContent className="pt-6 overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Department</TableHead>
-                    <TableHead>Year</TableHead>
-                    <TableHead>Registrations</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+              <div className="inline-block min-w-full rounded-lg border border-border">
+                <div className="bg-surface-2 grid grid-cols-5 gap-4 p-4 font-medium text-muted text-sm">
+                  <div>Name</div>
+                  <div>Email</div>
+                  <div>Department</div>
+                  <div>Year</div>
+                  <div>Registrations</div>
+                </div>
+                <div className="divide-y divide-border">
                   {participants.map((participant) => (
-                    <motion.tr key={participant.id} variants={variants.staggerItem}>
-                      <TableCell className="font-medium">{participant.name}</TableCell>
-                      <TableCell className="text-sm text-muted">{participant.email}</TableCell>
-                      <TableCell>{participant.department}</TableCell>
-                      <TableCell>Year {participant.year}</TableCell>
-                      <TableCell>
-                        <span className="text-sm">
-                          {participant.participation_history?.length ?? 0} events
-                        </span>
-                      </TableCell>
-                    </motion.tr>
+                    <motion.div
+                      key={participant.id}
+                      variants={variants.staggerItem}
+                      className="grid grid-cols-5 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm cursor-pointer"
+                      onClick={() => navigate(`/participants/${participant.id}`)}
+                    >
+                      <div className="font-medium text-text">{participant.name}</div>
+                      <div className="text-muted">{participant.email}</div>
+                      <div className="text-text">{participant.department}</div>
+                      <div className="text-text">Year {participant.year}</div>
+                      <div className="text-sm text-text">
+                        {participant.participation_history?.length ?? 0} events
+                      </div>
+                    </motion.div>
                   ))}
-                </TableBody>
-              </Table>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </motion.div>
