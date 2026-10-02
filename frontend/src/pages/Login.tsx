@@ -106,8 +106,10 @@ export default function LoginPage() {
                     useAuth.setState({ token: null, user: null });
                     navigate('/login', { replace: true });
                   });
+                  // Set auth state in Zustand store FIRST, then navigate
                   setSession(mockToken, mockUser);
-                  navigate('/', { replace: true });
+                  // Small delay to ensure Zustand persists before router re-evaluates
+                  setTimeout(() => navigate('/', { replace: true }), 0);
                 }}
                 className="w-full"
               >
