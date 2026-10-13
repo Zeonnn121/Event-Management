@@ -38,7 +38,7 @@ Rate limited: 10 attempts per minute per IP.
 
 **Request body**
 ```json
-{ "email": "admin@council.edu", "password": "secret123" }
+{ "email": "admin@council.edu", "password": "Admin@123" }
 ```
 
 **Success** `200`
@@ -93,7 +93,7 @@ Requires: `admin`.
 {
   "name": "Bob Organizer",
   "email": "bob@council.edu",
-  "password": "secret123",
+  "password": "Organizer@123",
   "role": "organizer",
   "department": "Electrical Engineering"
 }

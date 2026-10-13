@@ -35,7 +35,7 @@
             "url": "{{baseUrl}}/api/auth/login",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"admin@council.edu\",\n  \"password\": \"secret123\"\n}"
+              "raw": "{\n  \"email\": \"admin@council.edu\",\n  \"password\": \"Admin@123\"\n}"
             }
           }
         },
@@ -63,7 +63,7 @@
             "url": "{{baseUrl}}/api/users",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Bob Organizer\",\n  \"email\": \"bob@council.edu\",\n  \"password\": \"secret123\",\n  \"role\": \"organizer\",\n  \"department\": \"Electrical Engineering\"\n}"
+              "raw": "{\n  \"name\": \"Bob Organizer\",\n  \"email\": \"bob@council.edu\",\n  \"password\": \"Organizer@123\",\n  \"role\": \"organizer\",\n  \"department\": \"Electrical Engineering\"\n}"
             }
           }
         },

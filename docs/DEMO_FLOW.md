@@ -8,7 +8,7 @@ A step-by-step walkthrough covering all major features in logical order. Prerequ
 
 ```
 POST /api/auth/login
-Body: { "email": "admin@council.edu", "password": "secret123" }
+Body: { "email": "admin@council.edu", "password": "Admin@123" }
 ```
 
 Save the returned `token`. All subsequent requests use:
@@ -25,7 +25,7 @@ POST /api/users
 Body: {
   "name": "Bob Organizer",
   "email": "bob@council.edu",
-  "password": "secret123",
+  "password": "Organizer@123",
   "role": "organizer",
   "department": "Electrical Engineering"
 }

@@ -32,6 +32,30 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
   });
 
+  const skipLogin = async () => {
+    setIsLoading(true);
+    try {
+      const response = await apiFetch<{ token: string; user: User }>('/api/auth/dev-login', {
+        method: 'POST',
+        skipAuth: true,
+      });
+
+      setAuthToken(response.token);
+      setOnUnauthorized(() => {
+        useAuth.setState({ token: null, user: null });
+        navigate('/login', { replace: true });
+      });
+      setSession(response.token, response.user);
+      navigate('/', { replace: true });
+      toast.success('Skipped login in development mode');
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unable to skip login';
+      toast.error(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const onSubmit = async (data: LoginFormData) => {
     setIsLoading(true);
     try {
@@ -72,14 +96,14 @@ export default function LoginPage() {
               {...register('email')}
               label="Email"
               type="email"
-              placeholder="admin@example.com"
+              placeholder="admin@council.edu"
               error={errors.email?.message}
             />
             <Input
               {...register('password')}
               label="Password"
               type="password"
-              placeholder="••••••••"
+              placeholder="Admin@123"
               error={errors.password?.message}
             />
             <Button type="submit" isLoading={isLoading} className="w-full">
@@ -91,32 +115,16 @@ export default function LoginPage() {
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => {
-                  // Create a mock user/token for dev purposes
-                  const mockUser = {
-                    id: 1,
-                    name: 'Dev User',
-                    email: 'dev@example.com',
-                    role: 'admin' as const,
-                    department: 'Tech',
-                  };
-                  const mockToken = 'dev-token-' + Date.now();
-                  setAuthToken(mockToken);
-                  setOnUnauthorized(() => {
-                    useAuth.setState({ token: null, user: null });
-                    navigate('/login', { replace: true });
-                  });
-                  // Set auth state; router will auto-redirect via the gate
-                  setSession(mockToken, mockUser);
-                }}
+                onClick={skipLogin}
+                isLoading={isLoading}
                 className="w-full"
               >
                 Skip for now
               </Button>
               <div className="pt-4 border-t border-border text-xs text-muted">
                 <p className="font-semibold mb-2">Demo credentials:</p>
-                <p>Email: admin@example.com</p>
-                <p>Password: password123</p>
+                <p>Email: admin@council.edu</p>
+                <p>Password: Admin@123</p>
               </div>
             </div>
           )}
