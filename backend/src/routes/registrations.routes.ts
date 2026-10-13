@@ -2,10 +2,10 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { getPool, query } from "../db";
-import { badRequest, conflict, notFound } from "../utils/HttpError";
+import { badRequest, conflict, notFound, forbidden } from "../utils/HttpError";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { validate } from "../middleware/validate";
-import { requireAuth, requireRole } from "../middleware/auth";
+import { requireAuth, requireRole, requireCouncilEventAccess } from "../middleware/auth";
 
 const router = Router();
 
@@ -28,19 +28,36 @@ const attendanceSchema = z.object({
   ).min(1),
 });
 
-// ── POST /api/events/:id/registrations (admin/organizer) ──
+// ── Helper: verify event belongs to caller's council (or caller is super_admin) ──
+async function verifyEventAccess(eventId: number, user: Express.Request["user"]): Promise<void> {
+  if (!user) throw forbidden();
+  if (user.role === "super_admin") return;
+
+  const rows = await query<RowDataPacket[]>(
+    "SELECT council_id FROM events WHERE event_id = ?",
+    [eventId]
+  );
+  if (rows.length === 0) throw notFound("Event not found");
+
+  if (rows[0].council_id !== user.council_id) {
+    throw notFound("Event not found");
+  }
+}
+
+// ── POST /api/events/:id/registrations (super_admin or council_lead) ──
 router.post(
   "/events/:id/registrations",
   requireAuth,
-  requireRole("admin", "organizer"),
+  requireRole("super_admin", "council_lead"),
   validate(registrationCreateSchema, "body"),
   asyncHandler(async (req: Request, res: Response) => {
     const eventId = Number(req.params.id);
     if (!eventId) throw badRequest("Invalid event ID");
 
+    await verifyEventAccess(eventId, req.user);
+
     const { participant_id } = req.body;
 
-    // Verify event exists
     const eventRows = await query<RowDataPacket[]>(
       "SELECT event_id, status, capacity, registration_deadline FROM events WHERE event_id = ?",
       [eventId]
@@ -49,14 +66,12 @@ router.post(
 
     const event = eventRows[0];
 
-    // Event must be planned or registration_open
     if (event.status !== "planned" && event.status !== "registration_open") {
       throw badRequest(
         `Cannot register for an event with status '${event.status}'`
       );
     }
 
-    // Check registration deadline
     if (event.registration_deadline) {
       const today = new Date().toISOString().slice(0, 10);
       if (today > event.registration_deadline) {
@@ -64,7 +79,6 @@ router.post(
       }
     }
 
-    // Verify participant exists
     const participantRows = await query<RowDataPacket[]>(
       "SELECT participant_id FROM participants WHERE participant_id = ?",
       [participant_id]
@@ -75,7 +89,6 @@ router.post(
     try {
       await conn.beginTransaction();
 
-      // Lock the event row to count registrations safely
       const [lockedRows] = await conn.query<RowDataPacket[]>(
         "SELECT capacity FROM events WHERE event_id = ? FOR UPDATE",
         [eventId]
@@ -134,6 +147,8 @@ router.get(
     const eventId = Number(req.params.id);
     if (!eventId) throw badRequest("Invalid event ID");
 
+    await verifyEventAccess(eventId, req.user);
+
     const eventRows = await query<RowDataPacket[]>(
       "SELECT event_id FROM events WHERE event_id = ?",
       [eventId]
@@ -156,11 +171,11 @@ router.get(
   })
 );
 
-// ── PATCH /api/registrations/:id (admin/organizer) ──
+// ── PATCH /api/registrations/:id (super_admin or council_lead) ──
 router.patch(
   "/registrations/:id",
   requireAuth,
-  requireRole("admin", "organizer"),
+  requireRole("super_admin", "council_lead"),
   validate(registrationPatchSchema, "body"),
   asyncHandler(async (req: Request, res: Response) => {
     const registrationId = Number(req.params.id);
@@ -174,6 +189,9 @@ router.patch(
 
     const reg = regRows[0];
 
+    // Verify event access
+    await verifyEventAccess(reg.event_id, req.user);
+
     if (reg.status === "cancelled") {
       throw badRequest("Registration is already cancelled");
     }
@@ -184,13 +202,11 @@ router.patch(
     try {
       await conn.beginTransaction();
 
-      // Cancel the registration
       await conn.query(
         "UPDATE registrations SET status = 'cancelled' WHERE registration_id = ?",
         [registrationId]
       );
 
-      // If the cancelled one was 'registered', promote the oldest waitlisted
       if (wasRegistered) {
         const [waitlisted] = await conn.query<RowDataPacket[]>(
           `SELECT registration_id FROM registrations
@@ -226,15 +242,17 @@ router.patch(
   })
 );
 
-// ── PUT /api/events/:id/attendance (admin/organizer) ──
+// ── PUT /api/events/:id/attendance (super_admin or council_lead) ──
 router.put(
   "/events/:id/attendance",
   requireAuth,
-  requireRole("admin", "organizer"),
+  requireRole("super_admin", "council_lead"),
   validate(attendanceSchema, "body"),
   asyncHandler(async (req: Request, res: Response) => {
     const eventId = Number(req.params.id);
     if (!eventId) throw badRequest("Invalid event ID");
+
+    await verifyEventAccess(eventId, req.user);
 
     const eventRows = await query<RowDataPacket[]>(
       "SELECT event_id FROM events WHERE event_id = ?",
@@ -246,7 +264,6 @@ router.put(
       records: { participant_id: number; present: boolean }[];
     };
 
-    // Validate all participant_ids are registered for this event
     const registeredRows = await query<RowDataPacket[]>(
       `SELECT participant_id FROM registrations
        WHERE event_id = ? AND status = 'registered'`,
@@ -267,7 +284,6 @@ router.put(
       );
     }
 
-    // Upsert attendance in one transaction
     const conn = await getPool().getConnection();
     try {
       await conn.beginTransaction();
@@ -300,6 +316,8 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const eventId = Number(req.params.id);
     if (!eventId) throw badRequest("Invalid event ID");
+
+    await verifyEventAccess(eventId, req.user);
 
     const eventRows = await query<RowDataPacket[]>(
       "SELECT event_id FROM events WHERE event_id = ?",

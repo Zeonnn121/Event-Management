@@ -5,7 +5,7 @@ import { query } from "../db";
 import { badRequest, notFound, forbidden } from "../utils/HttpError";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { validate } from "../middleware/validate";
-import { requireAuth, requireRole } from "../middleware/auth";
+import { requireAuth, requireRole, requireCouncilEventAccess, requireCouncilFileAccess } from "../middleware/auth";
 import {
   buildEventKey,
   getUploadUrl,
@@ -46,26 +46,42 @@ const registerFileSchema = z.object({
   size_bytes: z.number().int().positive(),
 });
 
-// ── POST /api/events/:id/files/upload-url (admin/organizer) ──
+// ── Helper: verify event belongs to the caller's council ──
+async function verifyEventAccess(eventId: number, user: Express.Request["user"]): Promise<void> {
+  if (!user) throw forbidden();
+  if (user.role === "super_admin") return;
+
+  const rows = await query<RowDataPacket[]>(
+    "SELECT council_id FROM events WHERE event_id = ?",
+    [eventId]
+  );
+  if (rows.length === 0) throw notFound("Event not found");
+
+  if (rows[0].council_id !== user.council_id) {
+    throw notFound("Event not found");
+  }
+}
+
+// ── POST /api/events/:id/files/upload-url (super_admin or council_lead) ──
 router.post(
   "/events/:id/files/upload-url",
   requireAuth,
-  requireRole("admin", "organizer"),
+  requireRole("super_admin", "council_lead"),
   validate(uploadUrlSchema, "body"),
   asyncHandler(async (req: Request, res: Response) => {
     const eventId = Number(req.params.id);
     if (!eventId) throw badRequest("Invalid event ID");
 
+    await verifyEventAccess(eventId, req.user);
+
     const { file_name, file_type, content_type, size_bytes } = req.body as z.infer<typeof uploadUrlSchema>;
 
-    // Verify event exists
     const eventRows = await query<RowDataPacket[]>(
       "SELECT event_id FROM events WHERE event_id = ?",
       [eventId]
     );
     if (eventRows.length === 0) throw notFound("Event not found");
 
-    // Validate content_type against file_type
     const allowed = ALLOWED_TYPES[file_type];
     if (!allowed.includes(content_type)) {
       throw badRequest(
@@ -80,32 +96,31 @@ router.post(
   })
 );
 
-// ── POST /api/events/:id/files (admin/organizer) ──
+// ── POST /api/events/:id/files (super_admin or council_lead) ──
 router.post(
   "/events/:id/files",
   requireAuth,
-  requireRole("admin", "organizer"),
+  requireRole("super_admin", "council_lead"),
   validate(registerFileSchema, "body"),
   asyncHandler(async (req: Request, res: Response) => {
     const eventId = Number(req.params.id);
     if (!eventId) throw badRequest("Invalid event ID");
 
+    await verifyEventAccess(eventId, req.user);
+
     const { s3_key, original_name, file_type, content_type, size_bytes } = req.body as z.infer<typeof registerFileSchema>;
 
-    // Verify event exists
     const eventRows = await query<RowDataPacket[]>(
       "SELECT event_id FROM events WHERE event_id = ?",
       [eventId]
     );
     if (eventRows.length === 0) throw notFound("Event not found");
 
-    // Verify the s3_key belongs to this event
     const expectedPrefix = `events/event-${eventId}/`;
     if (!s3_key.startsWith(expectedPrefix)) {
       throw forbidden(`s3_key must start with '${expectedPrefix}'`);
     }
 
-    // Optionally confirm object exists in S3
     const exists = await headObject(s3_key);
     if (!exists) {
       throw badRequest("The specified S3 object does not exist. Upload the file first.");
@@ -128,13 +143,15 @@ router.post(
   })
 );
 
-// ── GET /api/events/:id/files (optional ?file_type=) ──
+// ── GET /api/events/:id/files ──
 router.get(
   "/events/:id/files",
   requireAuth,
   asyncHandler(async (req: Request, res: Response) => {
     const eventId = Number(req.params.id);
     if (!eventId) throw badRequest("Invalid event ID");
+
+    await verifyEventAccess(eventId, req.user);
 
     const eventRows = await query<RowDataPacket[]>(
       "SELECT event_id FROM events WHERE event_id = ?",
@@ -175,6 +192,7 @@ router.get(
 router.get(
   "/files/:fileId/download-url",
   requireAuth,
+  requireCouncilFileAccess("fileId"),
   asyncHandler(async (req: Request, res: Response) => {
     const fileId = Number(req.params.fileId);
     if (!fileId) throw badRequest("Invalid file ID");
@@ -191,11 +209,12 @@ router.get(
   })
 );
 
-// ── DELETE /api/files/:fileId (admin/organizer) ──
+// ── DELETE /api/files/:fileId (super_admin or council_lead) ──
 router.delete(
   "/files/:fileId",
   requireAuth,
-  requireRole("admin", "organizer"),
+  requireRole("super_admin", "council_lead"),
+  requireCouncilFileAccess("fileId"),
   asyncHandler(async (req: Request, res: Response) => {
     const fileId = Number(req.params.fileId);
     if (!fileId) throw badRequest("Invalid file ID");
@@ -208,7 +227,6 @@ router.delete(
 
     const s3Key = rows[0].s3_key as string;
 
-    // Delete DB row first, then S3 object
     await query("DELETE FROM event_files WHERE file_id = ?", [fileId]);
     await deleteObject(s3Key);
 

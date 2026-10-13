@@ -2,10 +2,10 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { getPool, query } from "../db";
-import { badRequest, conflict, notFound } from "../utils/HttpError";
+import { badRequest, conflict, notFound, forbidden } from "../utils/HttpError";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { validate } from "../middleware/validate";
-import { requireAuth, requireRole } from "../middleware/auth";
+import { requireAuth, requireRole, requireCouncilCertAccess } from "../middleware/auth";
 import { getDownloadUrl, putObject } from "../services/s3.service";
 import {
   buildCertificateCode,
@@ -15,23 +15,39 @@ import {
 
 const router = Router();
 
+// ── Helper: verify event council access ──
+async function verifyEventAccess(eventId: number, user: Express.Request["user"]): Promise<void> {
+  if (!user) throw forbidden();
+  if (user.role === "super_admin") return;
+
+  const rows = await query<RowDataPacket[]>(
+    "SELECT council_id FROM events WHERE event_id = ?",
+    [eventId]
+  );
+  if (rows.length === 0) throw notFound("Event not found");
+
+  if (rows[0].council_id !== user.council_id) {
+    throw notFound("Event not found");
+  }
+}
+
 // ── Zod schemas ──
 
 const createCertificatesSchema = z.object({
   participant_ids: z.array(z.number().int().positive()).min(1),
 });
 
-// ── POST /api/events/:id/certificates (admin/organizer) ──
-// Only participants marked present for the event receive one; everyone else is
-// reported back in `skipped` with a reason. Duplicates are skipped, not errors.
+// ── POST /api/events/:id/certificates (super_admin or council_lead) ──
 router.post(
   "/events/:id/certificates",
   requireAuth,
-  requireRole("admin", "organizer"),
+  requireRole("super_admin", "council_lead"),
   validate(createCertificatesSchema, "body"),
   asyncHandler(async (req: Request, res: Response) => {
     const eventId = Number(req.params.id);
     if (!eventId) throw badRequest("Invalid event ID");
+
+    await verifyEventAccess(eventId, req.user);
 
     const eventRows = await query<RowDataPacket[]>(
       "SELECT event_id, event_date FROM events WHERE event_id = ?",
@@ -39,7 +55,6 @@ router.post(
     );
     if (eventRows.length === 0) throw notFound("Event not found");
 
-    // event_date comes back as "YYYY-MM-DD" because the pool uses dateStrings
     const eventYear = Number(String(eventRows[0].event_date).slice(0, 4));
 
     const { participant_ids } = req.body as z.infer<
@@ -54,20 +69,15 @@ router.post(
       await conn.beginTransaction();
 
       for (const participantId of participant_ids) {
-        // Participant must exist
         const [participantRows] = await conn.query<RowDataPacket[]>(
           "SELECT participant_id FROM participants WHERE participant_id = ?",
           [participantId]
         );
         if (participantRows.length === 0) {
-          skipped.push({
-            participant_id: participantId,
-            reason: "participant_not_found",
-          });
+          skipped.push({ participant_id: participantId, reason: "participant_not_found" });
           continue;
         }
 
-        // Participant must be marked present for this event
         const [attendanceRows] = await conn.query<RowDataPacket[]>(
           "SELECT present FROM attendance WHERE event_id = ? AND participant_id = ?",
           [eventId, participantId]
@@ -80,7 +90,6 @@ router.post(
           continue;
         }
 
-        // Already has a certificate for this event
         const [existingRows] = await conn.query<RowDataPacket[]>(
           "SELECT certificate_id FROM certificates WHERE event_id = ? AND participant_id = ?",
           [eventId, participantId]
@@ -128,6 +137,8 @@ router.get(
     const eventId = Number(req.params.id);
     if (!eventId) throw badRequest("Invalid event ID");
 
+    await verifyEventAccess(eventId, req.user);
+
     const eventRows = await query<RowDataPacket[]>(
       "SELECT event_id FROM events WHERE event_id = ?",
       [eventId]
@@ -164,6 +175,16 @@ router.get(
     );
     if (participantRows.length === 0) throw notFound("Participant not found");
 
+    // Council leads only see certs for their council's events
+    const councilFilter =
+      req.user?.role === "council_lead" && req.user.council_id
+        ? "AND e.council_id = ?"
+        : "";
+    const councilParam =
+      req.user?.role === "council_lead" && req.user.council_id
+        ? [req.user.council_id]
+        : [];
+
     const rows = await query<RowDataPacket[]>(
       `SELECT
          c.certificate_id, c.certificate_code, c.event_id, c.participant_id,
@@ -171,21 +192,21 @@ router.get(
          e.title AS event_title, e.event_date, e.category
        FROM certificates c
        JOIN events e ON c.event_id = e.event_id
-       WHERE c.participant_id = ?
+       WHERE c.participant_id = ? ${councilFilter}
        ORDER BY e.event_date DESC`,
-      [participantId]
+      [participantId, ...councilParam]
     );
 
     res.json({ data: rows });
   })
 );
 
-// ── POST /api/certificates/:id/issue (admin/organizer) ──
-// Renders the PDF in memory, uploads it to S3, then flips the row to `issued`.
+// ── POST /api/certificates/:id/issue (super_admin or council_lead) ──
 router.post(
   "/certificates/:id/issue",
   requireAuth,
-  requireRole("admin", "organizer"),
+  requireRole("super_admin", "council_lead"),
+  requireCouncilCertAccess("id"),
   asyncHandler(async (req: Request, res: Response) => {
     const certificateId = Number(req.params.id);
     if (!certificateId) throw badRequest("Invalid certificate ID");
@@ -242,6 +263,7 @@ router.post(
 router.get(
   "/certificates/:id/download-url",
   requireAuth,
+  requireCouncilCertAccess("id"),
   asyncHandler(async (req: Request, res: Response) => {
     const certificateId = Number(req.params.id);
     if (!certificateId) throw badRequest("Invalid certificate ID");

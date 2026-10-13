@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 
 const TABLES = [
+  "councils",
   "users",
   "events",
   "participants",
@@ -17,6 +18,7 @@ const TABLES = [
 
 async function main() {
   const reset = process.argv.includes("--reset");
+  const migrate = process.argv.includes("--migrate");
 
   if (reset && process.env.NODE_ENV === "production") {
     console.error("Refusing to reset in production.");
@@ -41,6 +43,20 @@ async function main() {
       }
       await conn.query("SET FOREIGN_KEY_CHECKS=1");
       console.log("All tables dropped.");
+    }
+
+    if (migrate && !reset) {
+      // Run the v2 migration on an existing database
+      console.log("Running v2 migration...");
+      const migratePath = path.resolve(__dirname, "../../../database/migrate_v2.sql");
+      if (!fs.existsSync(migratePath)) {
+        console.error("migrate_v2.sql not found at:", migratePath);
+        process.exit(1);
+      }
+      const migrateSQL = fs.readFileSync(migratePath, "utf-8");
+      await conn.query(migrateSQL);
+      console.log("Migration v2 applied successfully.");
+      return;
     }
 
     const schemaPath = path.resolve(__dirname, "../../../database/schema.sql");

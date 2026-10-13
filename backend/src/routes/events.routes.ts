@@ -2,10 +2,15 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { query } from "../db";
-import { badRequest, conflict, notFound } from "../utils/HttpError";
+import { badRequest, conflict, notFound, forbidden } from "../utils/HttpError";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { validate } from "../middleware/validate";
-import { requireAuth, requireRole } from "../middleware/auth";
+import {
+  requireAuth,
+  requireRole,
+  requireSuperAdmin,
+  requireCouncilEventAccess,
+} from "../middleware/auth";
 
 const router = Router();
 
@@ -46,7 +51,6 @@ const eventCreateSchema = z
     }
   );
 
-// Update schema: all fields optional, no refine (validations done manually)
 const eventUpdateSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   description: z.string().optional(),
@@ -113,24 +117,46 @@ async function checkSchedulingConflict(
   return rows.length > 0 ? rows[0] as { event_id: number; title: string; start_time: string; end_time: string } : null;
 }
 
+// ── Helper: get council scope filter ──
+// Returns a SQL condition and params for filtering events by the user's council.
+// Super admin: no filter (sees all). Council lead: only their council.
+function getCouncilFilter(user: Express.Request["user"]): { clause: string; params: (number | string)[] } {
+  if (!user || user.role === "super_admin") return { clause: "", params: [] };
+  if (user.role === "council_lead" && user.council_id) {
+    return { clause: "AND e.council_id = ?", params: [user.council_id] };
+  }
+  // members see all events (read-only enforcement elsewhere)
+  return { clause: "", params: [] };
+}
+
 // ── GET /api/events/meta/filters ──
-// Register BEFORE /:id so it doesn't get shadowed
 router.get(
   "/meta/filters",
-  asyncHandler(async (_req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
+    // Council leads only see filter values from their own council's events.
+    const scopeCouncilId =
+      req.user?.role === "council_lead" && req.user.council_id
+        ? req.user.council_id
+        : null;
+    const councilClause = scopeCouncilId ? "AND e.council_id = ?" : "";
+    const councilParams = scopeCouncilId ? [scopeCouncilId] : [];
+
     const [categories, years, departments] = await Promise.all([
       query<RowDataPacket[]>(
-        "SELECT DISTINCT category FROM events WHERE category IS NOT NULL ORDER BY category"
+        `SELECT DISTINCT e.category FROM events e WHERE 1=1 ${councilClause} ORDER BY e.category`,
+        councilParams
       ),
       query<RowDataPacket[]>(
-        "SELECT DISTINCT YEAR(event_date) AS year FROM events WHERE event_date IS NOT NULL ORDER BY year"
+        `SELECT DISTINCT YEAR(e.event_date) AS year FROM events e WHERE 1=1 ${councilClause} ORDER BY year`,
+        councilParams
       ),
       query<RowDataPacket[]>(
         `SELECT DISTINCT u.department
          FROM events e
          JOIN users u ON e.coordinator_id = u.user_id
-         WHERE u.department IS NOT NULL
-         ORDER BY u.department`
+         WHERE u.department IS NOT NULL ${councilClause}
+         ORDER BY u.department`,
+        councilParams
       ),
     ]);
 
@@ -144,7 +170,7 @@ router.get(
   })
 );
 
-// ── GET /api/events (list with pagination, filters, search) ──
+// ── GET /api/events ──
 router.get(
   "/",
   asyncHandler(async (req: Request, res: Response) => {
@@ -154,62 +180,62 @@ router.get(
 
     const conditions: string[] = [];
     const params: (string | number)[] = [];
-    // When min_participants is used we need outcomes to be present, so we
-    // switch from LEFT JOIN to INNER JOIN for that table in both queries.
     let outcomesJoin = "LEFT JOIN outcomes o ON e.event_id = o.event_id";
 
-    // q - LIKE search on title and description
+    // Council scope enforcement — council leads can only see their council's events
+    const councilFilter = getCouncilFilter(req.user);
+    if (councilFilter.clause) {
+      // Convert "AND e.council_id = ?" to a proper condition
+      conditions.push("e.council_id = ?");
+      params.push(councilFilter.params[0]);
+    } else if (req.user?.role === "super_admin" && req.query.council_id) {
+      // Super admin can filter by a specific council
+      conditions.push("e.council_id = ?");
+      params.push(Number(req.query.council_id));
+    }
+
     if (req.query.q && typeof req.query.q === "string") {
       conditions.push("(e.title LIKE ? OR e.description LIKE ?)");
       const q = `%${req.query.q}%`;
       params.push(q, q);
     }
 
-    // year
     if (req.query.year) {
       conditions.push("YEAR(e.event_date) = ?");
       params.push(Number(req.query.year));
     }
 
-    // category
     if (req.query.category && typeof req.query.category === "string") {
       conditions.push("e.category = ?");
       params.push(req.query.category);
     }
 
-    // status
     if (req.query.status && typeof req.query.status === "string") {
       conditions.push("e.status = ?");
       params.push(req.query.status);
     }
 
-    // department (coordinator's department)
     if (req.query.department && typeof req.query.department === "string") {
       conditions.push("c_user.department = ?");
       params.push(req.query.department);
     }
 
-    // organizer (user_id of an organizer for this event)
     if (req.query.organizer) {
       conditions.push("e.event_id IN (SELECT event_id FROM organizers WHERE user_id = ?)");
       params.push(Number(req.query.organizer));
     }
 
-    // min_participants (from outcomes) — switch to INNER JOIN so NULL rows
-    // are excluded by the JOIN itself, not silently by the WHERE predicate
     if (req.query.min_participants) {
       outcomesJoin = "INNER JOIN outcomes o ON e.event_id = o.event_id";
       conditions.push("o.participants_count >= ?");
       params.push(Number(req.query.min_participants));
     }
 
-    // from date
     if (req.query.from && typeof req.query.from === "string") {
       conditions.push("e.event_date >= ?");
       params.push(req.query.from);
     }
 
-    // to date
     if (req.query.to && typeof req.query.to === "string") {
       conditions.push("e.event_date <= ?");
       params.push(req.query.to);
@@ -218,7 +244,6 @@ router.get(
     const whereClause =
       conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
-    // Sort
     const sortMap: Record<string, string> = {
       date_desc: "e.event_date DESC, e.start_time DESC",
       date_asc: "e.event_date ASC, e.start_time ASC",
@@ -227,7 +252,6 @@ router.get(
     const sortKey = (req.query.sort as string) || "date_desc";
     const orderBy = sortMap[sortKey] || sortMap.date_desc;
 
-    // Count total
     const countSql = `
       SELECT COUNT(*) AS total
       FROM events e
@@ -238,15 +262,16 @@ router.get(
     const countRows = await query<RowDataPacket[]>(countSql, params);
     const total = countRows[0].total;
 
-    // Fetch rows
     const dataSql = `
       SELECT
         e.*,
         c_user.name AS coordinator_name,
+        coun.name AS council_name,
         (SELECT COUNT(*) FROM registrations r WHERE r.event_id = e.event_id AND r.status = 'registered') AS registration_count,
         o.participants_count AS outcome_participants
       FROM events e
       LEFT JOIN users c_user ON e.coordinator_id = c_user.user_id
+      LEFT JOIN councils coun ON e.council_id = coun.council_id
       ${outcomesJoin}
       ${whereClause}
       ORDER BY ${orderBy}
@@ -254,16 +279,11 @@ router.get(
     `;
     const rows = await query<RowDataPacket[]>(dataSql, [...params, limit, offset]);
 
-    res.json({
-      data: rows,
-      page,
-      limit,
-      total,
-    });
+    res.json({ data: rows, page, limit, total });
   })
 );
 
-// ── GET /api/events/:id (event details) ──
+// ── GET /api/events/:id ──
 router.get(
   "/:id",
   asyncHandler(async (req: Request, res: Response) => {
@@ -271,9 +291,10 @@ router.get(
     if (!eventId) throw badRequest("Invalid event ID");
 
     const rows = await query<RowDataPacket[]>(
-      `SELECT e.*, c_user.name AS coordinator_name
+      `SELECT e.*, c_user.name AS coordinator_name, coun.name AS council_name
        FROM events e
        LEFT JOIN users c_user ON e.coordinator_id = c_user.user_id
+       LEFT JOIN councils coun ON e.council_id = coun.council_id
        WHERE e.event_id = ?`,
       [eventId]
     );
@@ -281,7 +302,14 @@ router.get(
     if (rows.length === 0) throw notFound("Event not found");
     const event = rows[0];
 
-    // Fetch related data in parallel
+    // Council lead: only their council's events
+    if (
+      req.user?.role === "council_lead" &&
+      event.council_id !== req.user.council_id
+    ) {
+      throw notFound("Event not found");
+    }
+
     const [organizers, regCount, fileCount, outcome] = await Promise.all([
       query<RowDataPacket[]>(
         `SELECT o.organizer_id, o.user_id, u.name AS user_name, o.responsibility
@@ -316,10 +344,10 @@ router.get(
   })
 );
 
-// ── POST /api/events (admin/organizer) ──
+// ── POST /api/events (super_admin or council_lead) ──
 router.post(
   "/",
-  requireRole("admin", "organizer"),
+  requireRole("super_admin", "council_lead"),
   validate(eventCreateSchema, "body"),
   asyncHandler(async (req: Request, res: Response) => {
     const {
@@ -335,11 +363,22 @@ router.post(
       registration_deadline,
     } = req.body;
 
-    // Normalize time to HH:MM:SS
+    // Determine council_id:
+    // - council_lead: ALWAYS uses their own council_id (ignore any client-sent value)
+    // - super_admin: may optionally pass council_id in body
+    let councilId: number | null = null;
+    if (req.user!.role === "council_lead") {
+      if (!req.user!.council_id) {
+        throw badRequest("Your account is not assigned to a council. Contact the Super Admin.");
+      }
+      councilId = req.user!.council_id;
+    } else if (req.user!.role === "super_admin") {
+      councilId = req.body.council_id || null;
+    }
+
     const normalizedStart = start_time.length === 5 ? `${start_time}:00` : start_time;
     const normalizedEnd = end_time.length === 5 ? `${end_time}:00` : end_time;
 
-    // Check scheduling conflict
     const conflictEvent = await checkSchedulingConflict(
       venue,
       event_date,
@@ -359,8 +398,8 @@ router.post(
     }
 
     const result = await query<ResultSetHeader>(
-      `INSERT INTO events (title, description, category, event_date, start_time, end_time, venue, coordinator_id, capacity, registration_deadline, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO events (title, description, category, event_date, start_time, end_time, venue, coordinator_id, capacity, registration_deadline, council_id, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         title,
         description || null,
@@ -372,12 +411,16 @@ router.post(
         coordinator_id || null,
         capacity,
         registration_deadline || null,
+        councilId,
         req.user!.user_id,
       ]
     );
 
     const created = await query<RowDataPacket[]>(
-      "SELECT * FROM events WHERE event_id = ?",
+      `SELECT e.*, coun.name AS council_name
+       FROM events e
+       LEFT JOIN councils coun ON e.council_id = coun.council_id
+       WHERE e.event_id = ?`,
       [result.insertId]
     );
 
@@ -385,16 +428,16 @@ router.post(
   })
 );
 
-// ── PUT /api/events/:id (admin/organizer) ──
+// ── PUT /api/events/:id (super_admin or council_lead) ──
 router.put(
   "/:id",
-  requireRole("admin", "organizer"),
+  requireRole("super_admin", "council_lead"),
+  requireCouncilEventAccess(),
   validate(eventUpdateSchema, "body"),
   asyncHandler(async (req: Request, res: Response) => {
     const eventId = Number(req.params.id);
     if (!eventId) throw badRequest("Invalid event ID");
 
-    // Check event exists
     const existing = await query<RowDataPacket[]>(
       "SELECT * FROM events WHERE event_id = ?",
       [eventId]
@@ -404,7 +447,9 @@ router.put(
     const current = existing[0];
     const updates = { ...req.body };
 
-    // Validate end_time > start_time (if both provided or merged)
+    // Never allow changing council_id via event update (use Super Admin route for that)
+    delete updates.council_id;
+
     const mergedStartTime = updates.start_time ?? current.start_time;
     const mergedEndTime = updates.end_time ?? current.end_time;
     const normalizedMergedStart = mergedStartTime.length === 5 ? `${mergedStartTime}:00` : mergedStartTime;
@@ -413,7 +458,6 @@ router.put(
       throw badRequest("end_time must be after start_time");
     }
 
-    // Validate registration_deadline <= event_date (if provided)
     if (updates.registration_deadline && updates.event_date) {
       if (updates.registration_deadline > updates.event_date) {
         throw badRequest("registration_deadline must be on or before event_date");
@@ -424,7 +468,6 @@ router.put(
       }
     }
 
-    // Merge with existing values for conflict check
     const venue = updates.venue ?? current.venue;
     const event_date = updates.event_date ?? current.event_date;
     const start_time_raw = updates.start_time ?? current.start_time;
@@ -432,7 +475,6 @@ router.put(
     const start_time = start_time_raw.length === 5 ? `${start_time_raw}:00` : start_time_raw;
     const end_time = end_time_raw.length === 5 ? `${end_time_raw}:00` : end_time_raw;
 
-    // Check scheduling conflict (exclude self)
     const conflictEvent = await checkSchedulingConflict(
       venue,
       event_date,
@@ -452,7 +494,6 @@ router.put(
       );
     }
 
-    // Build dynamic SET clause
     const setClauses: string[] = [];
     const setParams: (string | number | null)[] = [];
 
@@ -473,7 +514,6 @@ router.put(
       if (updates[field] !== undefined) {
         setClauses.push(`${field} = ?`);
         let val = updates[field];
-        // Normalize time fields
         if ((field === "start_time" || field === "end_time") && typeof val === "string" && val.length === 5) {
           val = `${val}:00`;
         }
@@ -497,10 +537,11 @@ router.put(
   })
 );
 
-// ── PATCH /api/events/:id/status (admin/organizer) ──
+// ── PATCH /api/events/:id/status (super_admin or council_lead) ──
 router.patch(
   "/:id/status",
-  requireRole("admin", "organizer"),
+  requireRole("super_admin", "council_lead"),
+  requireCouncilEventAccess(),
   validate(statusSchema, "body"),
   asyncHandler(async (req: Request, res: Response) => {
     const eventId = Number(req.params.id);
@@ -537,10 +578,10 @@ router.patch(
   })
 );
 
-// ── DELETE /api/events/:id (admin only) ──
+// ── DELETE /api/events/:id (super_admin only) ──
 router.delete(
   "/:id",
-  requireRole("admin"),
+  requireSuperAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const eventId = Number(req.params.id);
     if (!eventId) throw badRequest("Invalid event ID");
@@ -563,6 +604,20 @@ router.get(
     const eventId = Number(req.params.id);
     if (!eventId) throw badRequest("Invalid event ID");
 
+    // Verify access
+    const eventRows = await query<RowDataPacket[]>(
+      "SELECT council_id FROM events WHERE event_id = ?",
+      [eventId]
+    );
+    if (eventRows.length === 0) throw notFound("Event not found");
+
+    if (
+      req.user?.role === "council_lead" &&
+      eventRows[0].council_id !== req.user.council_id
+    ) {
+      throw notFound("Event not found");
+    }
+
     const rows = await query<RowDataPacket[]>(
       `SELECT o.organizer_id, o.event_id, o.user_id, u.name AS user_name, u.email, o.responsibility
        FROM organizers o
@@ -575,16 +630,16 @@ router.get(
   })
 );
 
-// ── POST /api/events/:id/organizers (admin/organizer) ──
+// ── POST /api/events/:id/organizers (super_admin or council_lead) ──
 router.post(
   "/:id/organizers",
-  requireRole("admin", "organizer"),
+  requireRole("super_admin", "council_lead"),
+  requireCouncilEventAccess(),
   validate(organizerSchema, "body"),
   asyncHandler(async (req: Request, res: Response) => {
     const eventId = Number(req.params.id);
     if (!eventId) throw badRequest("Invalid event ID");
 
-    // Check event exists
     const eventRows = await query<RowDataPacket[]>(
       "SELECT event_id FROM events WHERE event_id = ?",
       [eventId]
@@ -593,7 +648,6 @@ router.post(
 
     const { user_id, responsibility } = req.body;
 
-    // Check user exists
     const userRows = await query<RowDataPacket[]>(
       "SELECT user_id FROM users WHERE user_id = ?",
       [user_id]
@@ -627,7 +681,8 @@ router.post(
 // ── DELETE /api/events/:id/organizers/:organizerId ──
 router.delete(
   "/:id/organizers/:organizerId",
-  requireRole("admin", "organizer"),
+  requireRole("super_admin", "council_lead"),
+  requireCouncilEventAccess(),
   asyncHandler(async (req: Request, res: Response) => {
     const eventId = Number(req.params.id);
     const organizerId = Number(req.params.organizerId);
@@ -657,12 +712,11 @@ const outcomeSchema = z.object({
   description: z.string().nullable().optional(),
 });
 
-// ── PUT /api/events/:id/outcome (admin/organizer) ──
-// Omitted fields keep their existing value; participants_count defaults to the
-// number of present attendance rows when neither supplied nor already set.
+// ── PUT /api/events/:id/outcome (super_admin or council_lead) ──
 router.put(
   "/:id/outcome",
-  requireRole("admin", "organizer"),
+  requireRole("super_admin", "council_lead"),
+  requireCouncilEventAccess(),
   validate(outcomeSchema, "body"),
   asyncHandler(async (req: Request, res: Response) => {
     const eventId = Number(req.params.id);
@@ -701,19 +755,11 @@ router.put(
     }
 
     const resolvedFeedback =
-      feedback_score !== undefined
-        ? feedback_score
-        : existing
-          ? existing.feedback_score
-          : null;
+      feedback_score !== undefined ? feedback_score : existing ? existing.feedback_score : null;
     const resolvedWinners =
       winners !== undefined ? winners : existing ? existing.winners : null;
     const resolvedDescription =
-      description !== undefined
-        ? description
-        : existing
-          ? existing.description
-          : null;
+      description !== undefined ? description : existing ? existing.description : null;
 
     await query(
       `INSERT INTO outcomes (event_id, participants_count, feedback_score, winners, description)
@@ -723,13 +769,7 @@ router.put(
          feedback_score = VALUES(feedback_score),
          winners = VALUES(winners),
          description = VALUES(description)`,
-      [
-        eventId,
-        resolvedCount,
-        resolvedFeedback,
-        resolvedWinners,
-        resolvedDescription,
-      ]
+      [eventId, resolvedCount, resolvedFeedback, resolvedWinners, resolvedDescription]
     );
 
     const updated = await query<RowDataPacket[]>(
@@ -749,10 +789,17 @@ router.get(
     if (!eventId) throw badRequest("Invalid event ID");
 
     const eventRows = await query<RowDataPacket[]>(
-      "SELECT event_id FROM events WHERE event_id = ?",
+      "SELECT event_id, council_id FROM events WHERE event_id = ?",
       [eventId]
     );
     if (eventRows.length === 0) throw notFound("Event not found");
+
+    if (
+      req.user?.role === "council_lead" &&
+      eventRows[0].council_id !== req.user.council_id
+    ) {
+      throw notFound("Event not found");
+    }
 
     const rows = await query<RowDataPacket[]>(
       "SELECT * FROM outcomes WHERE event_id = ?",

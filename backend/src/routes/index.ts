@@ -7,15 +7,17 @@ import registrationsRoutes from "./registrations.routes";
 import filesRoutes from "./files.routes";
 import certificatesRoutes from "./certificates.routes";
 import dashboardRoutes from "./dashboard.routes";
+import councilsRoutes from "./councils.routes";
 
 const router = Router();
 
 router.use("/auth", authRoutes);
 router.use("/users", usersRoutes);
+router.use("/councils", councilsRoutes);
 router.use("/events", eventsRoutes);
 router.use("/participants", participantsRoutes);
 
-// Registrations and attendance are sub-resources of events and registrations
+// Registrations and attendance are sub-resources of events
 router.use("/", registrationsRoutes);
 
 // Files: /events/:id/files[...] and /files/:fileId[...]

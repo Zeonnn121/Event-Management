@@ -47,7 +47,7 @@ function normalizeLoginCredentials(email: string, password: string) {
 
   if (trimmedEmail === "admin@example.com" && password === "password123") {
     return {
-      email: "admin@council.edu",
+      email: "superadmin@council.edu",
       password: "Admin@123",
     };
   }
@@ -67,7 +67,11 @@ router.post(
     const normalized = normalizeLoginCredentials(email, password);
 
     const rows = await query<any[]>(
-      "SELECT user_id, name, email, password_hash, role, department FROM users WHERE email = ?",
+      `SELECT u.user_id, u.name, u.email, u.password_hash, u.role, u.department, u.council_id, u.is_active,
+              c.name AS council_name, c.slug AS council_slug
+       FROM users u
+       LEFT JOIN councils c ON u.council_id = c.council_id
+       WHERE u.email = ?`,
       [normalized.email]
     );
 
@@ -76,6 +80,11 @@ router.post(
     }
 
     const user = rows[0];
+
+    if (!user.is_active) {
+      throw unauthorized("Your account has been deactivated");
+    }
+
     const valid = await bcrypt.compare(normalized.password, user.password_hash);
     if (!valid) {
       throw unauthorized("Invalid email or password");
@@ -97,6 +106,9 @@ router.post(
           email: user.email,
           role: user.role,
           department: user.department,
+          council_id: user.council_id,
+          council_name: user.council_name,
+          council_slug: user.council_slug,
         },
       },
     });
@@ -114,11 +126,16 @@ router.post(
     }
 
     const rows = await query<any[]>(
-      "SELECT user_id, name, email, role, department FROM users WHERE role = 'admin' ORDER BY user_id LIMIT 1"
+      `SELECT u.user_id, u.name, u.email, u.role, u.department, u.council_id,
+              c.name AS council_name
+       FROM users u
+       LEFT JOIN councils c ON u.council_id = c.council_id
+       WHERE u.role = 'super_admin'
+       ORDER BY u.user_id LIMIT 1`
     );
 
     if (rows.length === 0) {
-      throw unauthorized("No admin user is available for development access");
+      throw unauthorized("No super_admin user is available for development access");
     }
 
     const user = rows[0];
@@ -132,11 +149,13 @@ router.post(
       data: {
         token,
         user: {
-          id: user.user_id,
+          user_id: user.user_id,
           name: user.name,
           email: user.email,
           role: user.role,
           department: user.department,
+          council_id: user.council_id,
+          council_name: user.council_name,
         },
       },
     });
@@ -149,7 +168,11 @@ router.get(
   requireAuth,
   asyncHandler(async (req: Request, res: Response) => {
     const rows = await query<any[]>(
-      "SELECT user_id, name, email, role, department FROM users WHERE user_id = ?",
+      `SELECT u.user_id, u.name, u.email, u.role, u.department, u.council_id, u.is_active,
+              c.name AS council_name, c.slug AS council_slug
+       FROM users u
+       LEFT JOIN councils c ON u.council_id = c.council_id
+       WHERE u.user_id = ?`,
       [req.user!.user_id]
     );
 

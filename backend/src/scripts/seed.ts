@@ -34,6 +34,7 @@ async function main() {
         "events",
         "participants",
         "users",
+        "councils",
       ];
       for (const t of tables) {
         await conn.query(`TRUNCATE TABLE \`${t}\``);
@@ -43,38 +44,51 @@ async function main() {
 
     const hash = (pw: string) => bcrypt.hashSync(pw, 10);
 
-    // ── Users ──
-    const users: any[] = [
-      ["Admin User", "admin@council.edu", hash("Admin@123"), "admin", "CSE"],
-      [
-        "Organizer One",
-        "organizer1@council.edu",
-        hash("Organizer@123"),
-        "organizer",
-        "CSE",
-      ],
-      [
-        "Organizer Two",
-        "organizer2@council.edu",
-        hash("Organizer@123"),
-        "organizer",
-        "IT",
-      ],
-      [
-        "Member User",
-        "member@council.edu",
-        hash("Member@123"),
-        "member",
-        "ECE",
-      ],
+    // ── Councils ──
+    const councils = [
+      ["Coding Council", "coding", "Building software skills through workshops, hackathons, and competitions."],
+      ["Robotics Council", "robotics", "Designing, building and programming robots for competitive and educational events."],
+      ["AI/ML Council", "aiml", "Exploring machine learning, deep learning, and AI applications."],
+      ["Cybersecurity Council", "cybersecurity", "Ethical hacking, security audits, and digital defense practices."],
+      ["Web Development Council", "webdev", "Frontend, backend, and full-stack web development training and events."],
     ];
-    for (const u of users) {
+
+    for (const c of councils) {
       await conn.query(
-        "INSERT INTO users (name, email, password_hash, role, department) VALUES (?, ?, ?, ?, ?)",
-        u
+        "INSERT INTO councils (name, slug, description, is_active) VALUES (?, ?, ?, TRUE)",
+        c
       );
     }
-    console.log("Seeded 4 users.");
+    console.log("Seeded 5 councils.");
+
+    // ── Users ──
+    // Super Admin (no council)
+    await conn.query(
+      "INSERT INTO users (name, email, password_hash, role, council_id, department) VALUES (?, ?, ?, ?, ?, ?)",
+      ["Super Admin", "superadmin@council.edu", hash("Admin@123"), "super_admin", null, "Management"]
+    );
+
+    // Council Leads (one per council)
+    const leadData = [
+      ["Coding Lead",      "coding@council.edu",    "Organizer@123", 1, "CSE"],
+      ["Robotics Lead",    "robotics@council.edu",  "Organizer@123", 2, "ECE"],
+      ["AI/ML Lead",       "aiml@council.edu",      "Organizer@123", 3, "CSE"],
+      ["Cybersec Lead",    "cybersec@council.edu",  "Organizer@123", 4, "IT"],
+      ["WebDev Lead",      "webdev@council.edu",    "Organizer@123", 5, "CSE"],
+    ];
+    for (const l of leadData) {
+      await conn.query(
+        "INSERT INTO users (name, email, password_hash, role, council_id, department) VALUES (?, ?, ?, 'council_lead', ?, ?)",
+        [l[0], l[1], hash(l[2] as string), l[3], l[4]]
+      );
+    }
+
+    // Member
+    await conn.query(
+      "INSERT INTO users (name, email, password_hash, role, council_id, department) VALUES (?, ?, ?, ?, ?, ?)",
+      ["Member User", "member@council.edu", hash("Member@123"), "member", null, "ECE"]
+    );
+    console.log("Seeded 7 users (1 super_admin, 5 council_leads, 1 member).");
 
     // ── Participants ──
     const departments = ["CSE", "IT", "ECE", "MECH"];
@@ -84,7 +98,7 @@ async function main() {
         `Participant ${i}`,
         `participant${i}@student.edu`,
         departments[(i - 1) % 4],
-        ((i - 1) % 4) + 1, // year 1-4
+        ((i - 1) % 4) + 1,
         `98765${String(10000 + i).slice(0, 5)}`,
       ]);
     }
@@ -97,124 +111,72 @@ async function main() {
     console.log("Seeded 20 participants.");
 
     // ── Events ──
-    // 6 events across 2024-2026, varied categories/statuses, no venue/time overlaps
+    // Events distributed across councils
+    // Users: super_admin=1, coding_lead=2, robotics_lead=3, aiml_lead=4, cybersec_lead=5, webdev_lead=6, member=7
     const events: any[] = [
-      // 1 - completed
+      // Council 1 (Coding) — completed
       [
-        "Web Development Workshop",
-        "Hands-on workshop on React and Node.js",
-        "Workshop",
-        "2024-03-15",
-        "09:00:00",
-        "12:00:00",
-        "Seminar Hall A",
-        2, // coordinator: organizer1
-        100,
-        "2024-03-10",
-        "completed",
-        1, // created_by: admin
+        "Web Development Workshop", "Hands-on workshop on React and Node.js",
+        "Workshop", "2024-03-15", "09:00:00", "12:00:00", "Seminar Hall A",
+        2, 100, "2024-03-10", "completed", 1, 1
       ],
-      // 2 - completed
+      // Council 1 (Coding) — completed
       [
-        "Code Sprint Hackathon",
-        "24-hour hackathon for all branches",
-        "Hackathon",
-        "2024-09-20",
-        "08:00:00",
-        "08:00:00", // next day 08:00 (24h)
-        "Lab Block B",
-        3, // coordinator: organizer2
-        60,
-        "2024-09-15",
-        "completed",
-        1,
+        "Code Sprint Hackathon", "24-hour hackathon for all branches",
+        "Hackathon", "2024-09-20", "08:00:00", "08:00:00",
+        "Lab Block B", 2, 60, "2024-09-15", "completed", 1, 1
       ],
-      // 3 - completed
+      // Council 3 (AI/ML) — completed
       [
-        "AI & ML Seminar",
-        "Introduction to machine learning concepts",
-        "Seminar",
-        "2025-01-25",
-        "10:00:00",
-        "13:00:00",
-        "Seminar Hall A",
-        2,
-        150,
-        "2025-01-20",
-        "completed",
-        1,
+        "AI & ML Seminar", "Introduction to machine learning concepts",
+        "Seminar", "2025-01-25", "10:00:00", "13:00:00", "Seminar Hall A",
+        4, 150, "2025-01-20", "completed", 3, 1
       ],
-      // 4 - registration_open
+      // Council 1 (Coding) — registration_open
       [
-        "Tech Innovation Competition",
-        "Pitch your innovation idea",
-        "Competition",
-        "2026-04-10",
-        "14:00:00",
-        "17:00:00",
-        "Auditorium",
-        3,
-        80,
-        "2026-04-05",
-        "registration_open",
-        1,
+        "Tech Innovation Competition", "Pitch your innovation idea",
+        "Competition", "2026-04-10", "14:00:00", "17:00:00", "Auditorium",
+        2, 80, "2026-04-05", "registration_open", 1, 1
       ],
-      // 5 - planned
+      // Council 5 (WebDev) — planned
       [
-        "Cloud Computing Workshop",
-        "AWS basics and hands-on labs",
-        "Workshop",
-        "2026-08-20",
-        "09:00:00",
-        "12:00:00",
-        "Lab Block C",
-        2,
-        50,
-        "2026-08-15",
-        "planned",
-        1,
+        "Cloud Computing Workshop", "AWS basics and hands-on labs",
+        "Workshop", "2026-08-20", "09:00:00", "12:00:00", "Lab Block C",
+        6, 50, "2026-08-15", "planned", 5, 1
       ],
-      // 6 - completed
+      // Council 4 (Cybersec) — completed
       [
-        "Cyber Security Seminar",
-        "Ethical hacking and security practices",
-        "Seminar",
-        "2025-11-05",
-        "11:00:00",
-        "13:30:00",
-        "Auditorium",
-        3,
-        120,
-        "2025-10-30",
-        "completed",
-        1,
+        "Cyber Security Seminar", "Ethical hacking and security practices",
+        "Seminar", "2025-11-05", "11:00:00", "13:30:00", "Auditorium",
+        5, 120, "2025-10-30", "completed", 4, 1
+      ],
+      // Council 2 (Robotics) — planned
+      [
+        "Robotics Design Workshop", "Learn to build autonomous robots",
+        "Workshop", "2026-09-15", "10:00:00", "16:00:00", "Lab Block D",
+        3, 40, "2026-09-10", "planned", 2, 1
       ],
     ];
+
     for (const e of events) {
       await conn.query(
-        `INSERT INTO events (title, description, category, event_date, start_time, end_time, venue, coordinator_id, capacity, registration_deadline, status, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO events (title, description, category, event_date, start_time, end_time, venue, coordinator_id, capacity, registration_deadline, status, council_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         e
       );
     }
-    console.log("Seeded 6 events.");
+    console.log("Seeded 7 events across 4 councils.");
 
     // ── Organizers ──
-    // Each event gets both organizers with different responsibilities
-    for (let eid = 1; eid <= 6; eid++) {
+    for (let eid = 1; eid <= 7; eid++) {
+      const leadId = [2, 2, 4, 2, 6, 5, 3][eid - 1];
       await conn.query(
         "INSERT INTO organizers (event_id, user_id, responsibility) VALUES (?, ?, ?)",
-        [eid, 2, "Logistics and venue"]
-      );
-      await conn.query(
-        "INSERT INTO organizers (event_id, user_id, responsibility) VALUES (?, ?, ?)",
-        [eid, 3, "Participants and communications"]
+        [eid, leadId, "Lead organizer"]
       );
     }
-    console.log("Seeded organizers for all events.");
+    console.log("Seeded organizers.");
 
     // ── Registrations ──
-    // 8-12 per event for completed events (1-3, 6) and event 4 (registration_open)
-    // Event 5 is planned — no registrations
     const regData: { eventId: number; count: number }[] = [
       { eventId: 1, count: 10 },
       { eventId: 2, count: 12 },
@@ -226,24 +188,26 @@ async function main() {
     for (const rd of regData) {
       for (let i = 0; i < rd.count; i++) {
         const pid = ((pOffset + i) % 20) + 1;
-        await conn.query(
-          "INSERT INTO registrations (event_id, participant_id, status) VALUES (?, ?, 'registered')",
-          [rd.eventId, pid]
-        );
+        try {
+          await conn.query(
+            "INSERT INTO registrations (event_id, participant_id, status) VALUES (?, ?, 'registered')",
+            [rd.eventId, pid]
+          );
+        } catch {
+          // skip duplicates
+        }
       }
       pOffset += rd.count;
     }
     console.log("Seeded registrations.");
 
     // ── Attendance ──
-    // For completed events (1, 2, 3, 6), mark some present
     const attEvents = [
       { eventId: 1, present: 8, absent: 2 },
       { eventId: 2, present: 10, absent: 2 },
       { eventId: 3, present: 7, absent: 1 },
       { eventId: 6, present: 9, absent: 2 },
     ];
-    let aOffset = 0;
     for (const ae of attEvents) {
       const [rows] = await conn.query(
         "SELECT participant_id FROM registrations WHERE event_id = ? AND status = 'registered' ORDER BY registration_id",
@@ -276,7 +240,6 @@ async function main() {
     console.log("Seeded outcomes.");
 
     // ── Certificates ──
-    // A few pending and issued certificates for completed events
     const certData = [
       ["TC-2024-E001-P0001", 1, 1, null, "pending", null],
       ["TC-2024-E001-P0002", 1, 2, null, "pending", null],
@@ -292,7 +255,15 @@ async function main() {
     }
     console.log("Seeded certificates.");
 
-    console.log("\nSeeding complete!");
+    console.log("\n=== Seeding complete! ===");
+    console.log("\nLogin credentials:");
+    console.log("  Super Admin:     superadmin@council.edu / Admin@123");
+    console.log("  Coding Lead:     coding@council.edu / Organizer@123");
+    console.log("  Robotics Lead:   robotics@council.edu / Organizer@123");
+    console.log("  AI/ML Lead:      aiml@council.edu / Organizer@123");
+    console.log("  Cybersec Lead:   cybersec@council.edu / Organizer@123");
+    console.log("  WebDev Lead:     webdev@council.edu / Organizer@123");
+    console.log("  Member:          member@council.edu / Member@123");
   } finally {
     await conn.end();
   }
