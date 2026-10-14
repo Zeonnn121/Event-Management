@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
@@ -43,6 +43,7 @@ const createEventSchema = z
 type CreateEventFormData = z.infer<typeof createEventSchema>;
 
 export default function CreateEventPage() {
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const {
     register,
@@ -71,6 +72,11 @@ export default function CreateEventPage() {
       }),
     onSuccess: (res) => {
       toast.success('Event created');
+      // The events list is cached with a 5-minute staleTime, so without this the
+      // new event is missing from the list until the cache goes stale.
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['events-filters'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       navigate(`/events/${res.event_id}`);
     },
     onError: (err: Error) => {

@@ -114,6 +114,11 @@ export default function EventDetailPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['event', eventId] });
+      // Status shows up as a badge in the events list and is used by its status
+      // filter, so the cached list must not keep serving the old value.
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['events-filters'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       toast.success('Status updated');
     },
     onError: (err: Error) => {
@@ -130,6 +135,7 @@ export default function EventDetailPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['event-outcome', eventId] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       toast.success('Outcome saved');
     },
     onError: (err: Error) => {
@@ -501,7 +507,9 @@ export default function EventDetailPage() {
                     <div className="divide-y divide-border">
                       {certificates.map((cert) => (
                         <div key={cert.certificate_id} className="grid grid-cols-4 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm">
-                          <div className="text-text">Participant {cert.participant_id}</div>
+                          <div className="text-text">
+                            {cert.name ?? `Participant ${cert.participant_id}`}
+                          </div>
                           <div>
                             <Badge variant={cert.status === 'issued' ? 'success' : 'default'}>
                               {cert.status}

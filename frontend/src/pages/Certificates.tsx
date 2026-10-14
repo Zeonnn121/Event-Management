@@ -14,6 +14,12 @@ import type { Certificate } from '@/lib/types';
 import { formatDate } from '@/lib/format';
 import { Download } from 'lucide-react';
 
+// /api/certificates joins the event title and participant name; the raw ids are
+// only a fallback in case a join ever comes back empty.
+const eventLabel = (cert: Certificate) => cert.event_title ?? `Event ${cert.event_id}`;
+const participantLabel = (cert: Certificate) =>
+  cert.participant_name ?? cert.name ?? `Participant ${cert.participant_id}`;
+
 export default function CertificatesPage() {
   const [viewMode, setViewMode] = useState<'event' | 'participant'>('event');
 
@@ -118,8 +124,12 @@ export default function CertificatesPage() {
                 <div className="divide-y divide-border">
                   {certificates.map((cert) => (
                     <motion.div key={cert.certificate_id} variants={variants.staggerItem} className="grid grid-cols-5 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm">
-                      <div className="text-text">{viewMode === 'event' ? `Event ${cert.event_id}` : `Participant ${cert.participant_id}`}</div>
-                      <div className="text-text">{viewMode === 'event' ? `Participant ${cert.participant_id}` : `Event ${cert.event_id}`}</div>
+                      <div className="text-text font-medium">
+                        {viewMode === 'event' ? eventLabel(cert) : participantLabel(cert)}
+                      </div>
+                      <div className="text-muted">
+                        {viewMode === 'event' ? participantLabel(cert) : eventLabel(cert)}
+                      </div>
                       <div>
                         <Badge variant={cert.status === 'issued' ? 'success' : 'default'}>
                           {cert.status}

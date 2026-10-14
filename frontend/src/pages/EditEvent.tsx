@@ -1,4 +1,4 @@
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
@@ -34,6 +34,7 @@ export default function EditEventPage() {
   const { id } = useParams<{ id: string }>();
   const eventId = parseInt(id ?? '0', 10);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { data: event, isLoading, error, refetch } = useQuery({
     queryKey: ['event', eventId],
@@ -68,6 +69,10 @@ export default function EditEventPage() {
       }),
     onSuccess: () => {
       toast.success('Event updated');
+      queryClient.invalidateQueries({ queryKey: ['event', eventId] });
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['events-filters'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       navigate(`/events/${eventId}`);
     },
     onError: (err: Error) => {

@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
@@ -25,6 +25,7 @@ type CreateParticipantFormData = z.infer<typeof createParticipantSchema>;
 
 export default function CreateParticipantPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const {
     register,
     handleSubmit,
@@ -42,6 +43,8 @@ export default function CreateParticipantPage() {
       }),
     onSuccess: (created) => {
       toast.success('Participant created');
+      queryClient.invalidateQueries({ queryKey: ['participants'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       navigate(`/participants/${created.participant_id}`);
     },
     onError: (err: Error) => {

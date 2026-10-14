@@ -134,6 +134,10 @@ export type Registration = {
   year: number;
 };
 
+// The two certificate endpoints join different display fields:
+//   GET /api/certificates          -> participant_name, event_title, event_date
+//   GET /api/events/:id/certificates -> name, email, department, year
+// Both sets are optional so either shape type-checks.
 export type Certificate = {
   certificate_id: number;
   certificate_code: string;
@@ -142,6 +146,13 @@ export type Certificate = {
   status: 'pending' | 'issued';
   s3_key?: string | null;
   issued_date: string | null;
+  // from GET /api/certificates (the flat list)
+  participant_name?: string;
+  participant_email?: string;
+  event_title?: string;
+  event_date?: string;
+  event_status?: EventStatus;
+  // from GET /api/events/:id/certificates
   name?: string;
   email?: string;
   department?: string;
