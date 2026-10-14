@@ -111,11 +111,11 @@ export default function ParticipantDetailPage() {
                 </div>
                 <div className="divide-y divide-border">
                   {participant.participation_history.map((reg) => (
-                    <div key={reg.id} className="grid grid-cols-4 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm">
+                    <div key={reg.registration_id} className="grid grid-cols-4 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm">
                       <div className="text-text">Event {reg.event_id}</div>
                       <div>
-                        <Badge variant={registrationStatusVariants[reg.status]}>
-                          {reg.status}
+                        <Badge variant={registrationStatusVariants[reg.registration_status]}>
+                          {reg.registration_status}
                         </Badge>
                       </div>
                       <div>
@@ -125,7 +125,7 @@ export default function ParticipantDetailPage() {
                           <Badge variant="danger">Absent</Badge>
                         )}
                       </div>
-                      <div className="text-muted">{formatDate(reg.registered_date)}</div>
+                      <div className="text-muted">{formatDate(reg.registration_date)}</div>
                     </div>
                   ))}
                 </div>

@@ -13,8 +13,8 @@ import { Select } from '@/components/ui/Select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/Dialog';
 import { Upload, Download, Plus, Check, X } from 'lucide-react';
 import { variants } from '@/lib/motion';
-import { apiFetch } from '@/lib/api';
-import type { Event, Registration, AttendanceResponse, Certificate, FileRecord, Outcome, Participant } from '@/lib/types';
+import { apiFetch, apiFetchEnvelope } from '@/lib/api';
+import type { Event, Registration, AttendanceResponse, AttendanceRecord, Certificate, FileRecord, Outcome, Participant } from '@/lib/types';
 import { formatDate, formatDateTime, formatTime } from '@/lib/format';
 import { toast } from 'sonner';
 import { useForm } from 'react-hook-form';
@@ -65,31 +65,43 @@ export default function EventDetailPage() {
 
   const { data: registrations } = useQuery({
     queryKey: ['event-registrations', eventId],
-    enabled: event?.id === eventId && activeTab === 'registrations',
+    enabled: event?.event_id === eventId && activeTab === 'registrations',
     queryFn: () => apiFetch<Registration[]>(`/api/events/${eventId}/registrations`),
   });
 
   const { data: attendance } = useQuery({
     queryKey: ['event-attendance', eventId],
-    enabled: event?.id === eventId && activeTab === 'attendance',
-    queryFn: () => apiFetch<AttendanceResponse>(`/api/events/${eventId}/attendance`),
+    enabled: event?.event_id === eventId && activeTab === 'attendance',
+    // This endpoint returns `{ data, summary }`, and apiFetch unwraps `data`,
+    // which would drop the summary — so use the envelope helper here.
+    queryFn: () =>
+      apiFetchEnvelope<AttendanceRecord[]>(`/api/events/${eventId}/attendance`).then(
+        (envelope) => ({
+          data: envelope.data ?? [],
+          summary: (envelope.summary as AttendanceResponse['summary']) ?? {
+            registered: 0,
+            present: 0,
+            absent: 0,
+          },
+        })
+      ),
   });
 
   const { data: files } = useQuery({
     queryKey: ['event-files', eventId],
-    enabled: event?.id === eventId && activeTab === 'files',
+    enabled: event?.event_id === eventId && activeTab === 'files',
     queryFn: () => apiFetch<FileRecord[]>(`/api/events/${eventId}/files`),
   });
 
   const { data: certificates } = useQuery({
     queryKey: ['event-certificates', eventId],
-    enabled: event?.id === eventId && activeTab === 'certificates',
+    enabled: event?.event_id === eventId && activeTab === 'certificates',
     queryFn: () => apiFetch<Certificate[]>(`/api/events/${eventId}/certificates`),
   });
 
   const { data: outcome } = useQuery({
     queryKey: ['event-outcome', eventId],
-    enabled: event?.id === eventId && activeTab === 'outcome',
+    enabled: event?.event_id === eventId && activeTab === 'outcome',
     queryFn: () => apiFetch<Outcome>(`/api/events/${eventId}/outcome`),
   });
 
@@ -134,9 +146,9 @@ export default function EventDetailPage() {
     resolver: zodResolver(outcomeSchema),
     defaultValues: {
       participants_count: outcome?.participants_count,
-      feedback_score: outcome?.feedback_score,
-      winners: outcome?.winners,
-      description: outcome?.description,
+      feedback_score: outcome?.feedback_score ?? undefined,
+      winners: outcome?.winners ?? undefined,
+      description: outcome?.description ?? undefined,
     },
   });
 
@@ -316,7 +328,7 @@ export default function EventDetailPage() {
                     </div>
                     <div className="divide-y divide-border">
                       {registrations.map((reg) => (
-                        <div key={reg.id} className="grid grid-cols-4 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm">
+                        <div key={reg.registration_id} className="grid grid-cols-4 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm">
                           <div className="text-text">Participant {reg.participant_id}</div>
                           <div>
                             <Badge variant={registrationStatusVariants[reg.status]}>
@@ -324,7 +336,7 @@ export default function EventDetailPage() {
                             </Badge>
                           </div>
                           <div className="text-muted">
-                            {formatDate(reg.registered_date)}
+                            {formatDate(reg.registration_date)}
                           </div>
                           <div></div>
                         </div>
@@ -441,8 +453,8 @@ export default function EventDetailPage() {
                     </div>
                     <div className="divide-y divide-border">
                       {files.map((file) => (
-                        <div key={file.id} className="grid grid-cols-4 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm">
-                          <div className="font-medium text-text">{file.file_name}</div>
+                        <div key={file.file_id} className="grid grid-cols-4 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm">
+                          <div className="font-medium text-text">{file.original_name}</div>
                           <div className="text-muted">{file.file_type}</div>
                           <div className="text-muted">{file.uploaded_by_name}</div>
                           <div>

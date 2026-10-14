@@ -48,14 +48,14 @@ export default function EditEventPage() {
     resolver: zodResolver(editEventSchema),
     defaultValues: {
       title: event?.title,
-      description: event?.description,
+      description: event?.description ?? undefined,
       category: event?.category,
       event_date: event?.event_date,
       start_time: event?.start_time,
       end_time: event?.end_time,
       venue: event?.venue,
       capacity: event?.capacity,
-      registration_deadline: event?.registration_deadline,
+      registration_deadline: event?.registration_deadline ?? undefined,
     },
   });
 

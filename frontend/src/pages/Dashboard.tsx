@@ -177,12 +177,16 @@ export default function DashboardPage() {
           <CardContent>
             <div className="space-y-4">
               {data.top_events.map((event) => (
-                <div key={event.id} className="flex justify-between items-start pb-4 border-b last:border-0">
+                <div key={event.event_id} className="flex justify-between items-start pb-4 border-b last:border-0">
                   <div>
                     <p className="font-medium text-text">{event.title}</p>
-                    <p className="text-sm text-muted">{event.venue}</p>
+                    <p className="text-sm text-muted">
+                      {event.council_name ?? event.category}
+                    </p>
                   </div>
-                  <p className="text-sm font-semibold text-primary">{event.registration_count ?? 0} registrations</p>
+                  <p className="text-sm font-semibold text-primary">
+                    {event.participants_count ?? 0} participants
+                  </p>
                 </div>
               ))}
             </div>
@@ -199,10 +203,10 @@ export default function DashboardPage() {
           <CardContent>
             <div className="space-y-4">
               {data.recent_uploads.map((file) => (
-                <div key={file.id} className="flex justify-between items-start pb-4 border-b last:border-0">
+                <div key={file.file_id} className="flex justify-between items-start pb-4 border-b last:border-0">
                   <div>
-                    <p className="font-medium text-text">{file.file_name}</p>
-                    <p className="text-sm text-muted">{file.uploaded_by_name}</p>
+                    <p className="font-medium text-text">{file.original_name}</p>
+                    <p className="text-sm text-muted">{file.event_title}</p>
                   </div>
                   <p className="text-sm text-muted">{file.file_type}</p>
                 </div>

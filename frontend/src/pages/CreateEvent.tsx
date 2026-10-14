@@ -12,18 +12,33 @@ import { variants } from '@/lib/motion';
 import { apiFetch } from '@/lib/api';
 import { toast } from 'sonner';
 
-const createEventSchema = z.object({
-  title: z.string().min(3, 'Title must be at least 3 characters'),
-  description: z.string().optional(),
-  category: z.string().min(1, 'Category is required'),
-  event_date: z.string().min(1, 'Event date is required'),
-  start_time: z.string().min(1, 'Start time is required'),
-  end_time: z.string().min(1, 'End time is required'),
-  venue: z.string().min(1, 'Venue is required'),
-  capacity: z.coerce.number().int().min(1, 'Capacity must be at least 1'),
-  registration_deadline: z.string().optional(),
-  coordinator_id: z.coerce.number().optional(),
-});
+const createEventSchema = z
+  .object({
+    title: z.string().min(3, 'Title must be at least 3 characters'),
+    description: z.string().optional(),
+    category: z.string().min(1, 'Category is required'),
+    event_date: z.string().min(1, 'Event date is required'),
+    start_time: z.string().min(1, 'Start time is required'),
+    end_time: z.string().min(1, 'End time is required'),
+    venue: z.string().min(1, 'Venue is required'),
+    capacity: z.coerce.number().int().min(1, 'Capacity must be at least 1'),
+    registration_deadline: z.string().optional(),
+    coordinator_id: z.coerce.number().optional(),
+  })
+  // Mirror the API's rules so the form reports them inline instead of the user
+  // getting an opaque "Validation failed" toast from the server.
+  .refine((data) => !data.start_time || !data.end_time || data.end_time > data.start_time, {
+    message: 'End time must be after start time',
+    path: ['end_time'],
+  })
+  .refine(
+    (data) =>
+      !data.registration_deadline || !data.event_date || data.registration_deadline <= data.event_date,
+    {
+      message: 'Registration deadline must be on or before the event date',
+      path: ['registration_deadline'],
+    }
+  );
 
 type CreateEventFormData = z.infer<typeof createEventSchema>;
 
@@ -142,6 +157,7 @@ export default function CreateEventPage() {
               {...register('registration_deadline')}
               label="Registration Deadline"
               type="date"
+              error={errors.registration_deadline?.message}
             />
             <div className="flex gap-2 pt-4">
               <Button type="submit" isLoading={isSubmitting}>

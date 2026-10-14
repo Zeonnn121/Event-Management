@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { variants } from '@/lib/motion';
 import { apiFetch } from '@/lib/api';
+import type { Participant } from '@/lib/types';
 import { toast } from 'sonner';
 
 const createParticipantSchema = z.object({
@@ -34,14 +35,14 @@ export default function CreateParticipantPage() {
 
   const mutation = useMutation({
     mutationFn: (data: CreateParticipantFormData) =>
-      apiFetch('/api/participants', {
+      apiFetch<Participant>('/api/participants', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }),
-    onSuccess: (res: any) => {
+    onSuccess: (created) => {
       toast.success('Participant created');
-      navigate(`/participants/${res.data.id}`);
+      navigate(`/participants/${created.participant_id}`);
     },
     onError: (err: Error) => {
       toast.error(err.message);

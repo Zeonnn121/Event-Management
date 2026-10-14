@@ -72,7 +72,25 @@ export async function apiFetch<T>(
         data?.toString() ||
         `HTTP ${response.status}`;
       const details = (errorData?.error as Record<string, unknown>)?.details;
-      throw new ApiErrorClass(response.status, message, details);
+
+      // A bare "Validation failed" tells the user nothing, so fold the field
+      // errors into the message that every page shows in a toast.
+      const fieldErrors = Array.isArray(details)
+        ? details
+            .map((d) => {
+              const issue = d as { path?: string; message?: string };
+              return issue?.message
+                ? issue.path
+                  ? `${issue.path}: ${issue.message}`
+                  : issue.message
+                : null;
+            })
+            .filter((line): line is string => !!line)
+        : [];
+      const fullMessage =
+        fieldErrors.length > 0 ? `${message}: ${fieldErrors.join('; ')}` : message;
+
+      throw new ApiErrorClass(response.status, fullMessage, details);
     }
 
     const envelope = data as ApiResponse<T> | null;

@@ -190,10 +190,10 @@ export default function ParticipantsPage() {
                 <div className="divide-y divide-border">
                   {participants.map((participant) => (
                     <motion.div
-                      key={participant.id}
+                      key={participant.participant_id}
                       variants={variants.staggerItem}
                       className="grid grid-cols-5 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm cursor-pointer"
-                      onClick={() => navigate(`/participants/${participant.id}`)}
+                      onClick={() => navigate(`/participants/${participant.participant_id}`)}
                     >
                       <div className="font-medium text-text">{participant.name}</div>
                       <div className="text-muted">{participant.email}</div>

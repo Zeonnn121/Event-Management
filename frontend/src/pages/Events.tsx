@@ -234,8 +234,8 @@ export default function EventsPage() {
           animate="animate"
         >
           {events.map((event) => (
-            <motion.div key={event.id} variants={variants.staggerItem}>
-              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/events/${event.id}`)}>
+            <motion.div key={event.event_id} variants={variants.staggerItem}>
+              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/events/${event.event_id}`)}>
                 <CardContent className="pt-6">
                   <div className="flex items-start justify-between mb-4">
                     <h3 className="font-semibold text-text line-clamp-2">{event.title}</h3>
@@ -258,7 +258,7 @@ export default function EventsPage() {
                         variant="danger"
                         isLoading={
                           deleteEventMutation.isPending &&
-                          deleteEventMutation.variables === event.id
+                          deleteEventMutation.variables === event.event_id
                         }
                         onClick={(e) => {
                           e.stopPropagation();
@@ -267,7 +267,7 @@ export default function EventsPage() {
                               `Delete "${event.title}"? This cannot be undone.`
                             )
                           ) {
-                            deleteEventMutation.mutate(event.id);
+                            deleteEventMutation.mutate(event.event_id);
                           }
                         }}
                       >
