@@ -5,32 +5,44 @@ import { query } from "../db";
 import { badRequest, conflict, notFound, forbidden } from "../utils/HttpError";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { validate } from "../middleware/validate";
-import { requireAuth, requireSuperAdmin } from "../middleware/auth";
+import { requireAuth, requireRole, requireSuperAdmin } from "../middleware/auth";
 
 const router = Router();
 
 // All routes require auth
 router.use(requireAuth);
 
-// ── POST /api/users (super_admin only) ──
-// Only super_admin can create users. Council leads and members cannot create other users.
-// A super_admin can create: super_admin, council_lead, member.
-// Council_lead must be given a council_id at creation or via assign-lead later.
+// ── POST /api/users (super_admin, or council_lead for their own committee) ──
+// A super_admin can create: super_admin, council_lead, council_member, member.
+// A council_lead can only create council_member, and they are always placed in
+// the lead's own council (any client-sent role/council_id is ignored).
+// A council_lead must be given a council_id at creation or via assign-lead later.
 const createUserSchema = z.object({
   name: z.string().min(1).max(100),
   email: z.string().email(),
   password: z.string().min(8),
-  role: z.enum(["super_admin", "council_lead", "member"]),
+  role: z.enum(["super_admin", "council_lead", "council_member", "member"]),
   department: z.string().max(100).optional(),
   council_id: z.number().int().positive().nullable().optional(),
 });
 
 router.post(
   "/",
-  requireSuperAdmin,
+  requireRole("super_admin", "council_lead"),
   validate(createUserSchema, "body"),
   asyncHandler(async (req: Request, res: Response) => {
-    const { name, email, password, role, department, council_id } = req.body;
+    let { name, email, password, role, department, council_id } = req.body;
+
+    if (req.user!.role === "council_lead") {
+      if (!req.user!.council_id) {
+        throw badRequest(
+          "Your account is not assigned to a council. Contact the Super Admin."
+        );
+      }
+      // Council leads only ever add council members to their own council.
+      role = "council_member";
+      council_id = req.user!.council_id;
+    }
 
     // If council_lead, validate council exists (if provided)
     if (council_id) {
@@ -79,24 +91,33 @@ router.post(
   })
 );
 
-// ── GET /api/users (super_admin only) ──
-// Council leads cannot list all users.
+// ── GET /api/users (super_admin; council_lead sees only their own council) ──
 router.get(
   "/",
-  requireSuperAdmin,
+  requireRole("super_admin", "council_lead"),
   asyncHandler(async (req: Request, res: Response) => {
     const { role, council_id } = req.query;
     const conditions: string[] = [];
     const params: any[] = [];
 
-    if (role && typeof role === "string") {
-      conditions.push("u.role = ?");
-      params.push(role);
-    }
-
-    if (council_id) {
+    if (req.user!.role === "council_lead") {
+      // Scope a lead to their own council, ignoring any requested council filter.
+      if (!req.user!.council_id) {
+        res.json({ data: [] });
+        return;
+      }
       conditions.push("u.council_id = ?");
-      params.push(Number(council_id));
+      params.push(req.user!.council_id);
+    } else {
+      if (role && typeof role === "string") {
+        conditions.push("u.role = ?");
+        params.push(role);
+      }
+
+      if (council_id) {
+        conditions.push("u.council_id = ?");
+        params.push(Number(council_id));
+      }
     }
 
     const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
@@ -202,6 +223,61 @@ router.put(
     );
 
     res.json({ data: updated[0] });
+  })
+);
+
+// ── DELETE /api/users/:id/council (super_admin, or council_lead for own council) ──
+// Removes a user from their council but keeps the account: they are detached and
+// become a plain member. This is the supported way to empty a council, because
+// DELETE /api/councils/:id is refused while anyone still belongs to it.
+router.delete(
+  "/:id/council",
+  requireRole("super_admin", "council_lead"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = Number(req.params.id);
+    if (!userId) throw badRequest("Invalid user ID");
+
+    const rows = await query<any[]>(
+      "SELECT user_id, name, role, council_id FROM users WHERE user_id = ?",
+      [userId]
+    );
+    if (rows.length === 0) throw notFound("User not found");
+
+    const target = rows[0];
+    if (target.council_id === null) {
+      throw badRequest("This user is not in a council");
+    }
+
+    if (req.user!.role === "council_lead") {
+      if (!req.user!.council_id) {
+        throw badRequest(
+          "Your account is not assigned to a council. Contact the Super Admin."
+        );
+      }
+      // Leads can only remove council members, and only from their own council.
+      // Another council's users are hidden behind a 404.
+      if (target.council_id !== req.user!.council_id) {
+        throw notFound("User not found");
+      }
+      if (target.role !== "council_member") {
+        throw forbidden("Council leads can only remove council members");
+      }
+    }
+
+    await query(
+      "UPDATE users SET council_id = NULL, role = 'member' WHERE user_id = ?",
+      [userId]
+    );
+
+    res.json({
+      data: {
+        user_id: userId,
+        name: target.name,
+        role: "member",
+        council_id: null,
+        message: "Removed from council",
+      },
+    });
   })
 );
 

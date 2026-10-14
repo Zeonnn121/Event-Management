@@ -58,7 +58,8 @@ router.get(
          c.council_id, c.name, c.slug, c.description, c.is_active,
          c.created_at, c.updated_at,
          u.user_id AS lead_user_id, u.name AS lead_name, u.email AS lead_email,
-         (SELECT COUNT(*) FROM events e WHERE e.council_id = c.council_id) AS event_count
+         (SELECT COUNT(*) FROM events e WHERE e.council_id = c.council_id) AS event_count,
+         (SELECT COUNT(*) FROM users m WHERE m.council_id = c.council_id) AS member_count
        FROM councils c
        LEFT JOIN users u ON u.council_id = c.council_id AND u.role = 'council_lead' AND u.is_active = TRUE
        ${where}
@@ -206,6 +207,50 @@ router.patch(
     );
 
     res.json({ data: updated[0] });
+  })
+);
+
+// ── DELETE /api/councils/:id (super_admin) ──
+// Refuses to delete a council that still has events or people in it, so nothing
+// is silently orphaned. Empty it first: detach its members with
+// DELETE /api/users/:id/council and delete its events.
+router.delete(
+  "/:id",
+  requireSuperAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const councilId = Number(req.params.id);
+    if (!councilId) throw badRequest("Invalid council ID");
+
+    const rows = await query<RowDataPacket[]>(
+      "SELECT council_id, name FROM councils WHERE council_id = ?",
+      [councilId]
+    );
+    if (rows.length === 0) throw notFound("Council not found");
+
+    const [eventRows, userRows] = await Promise.all([
+      query<RowDataPacket[]>(
+        "SELECT COUNT(*) AS count FROM events WHERE council_id = ?",
+        [councilId]
+      ),
+      query<RowDataPacket[]>(
+        "SELECT COUNT(*) AS count FROM users WHERE council_id = ?",
+        [councilId]
+      ),
+    ]);
+
+    const eventCount = Number(eventRows[0].count);
+    const userCount = Number(userRows[0].count);
+
+    if (eventCount > 0 || userCount > 0) {
+      throw conflict(
+        `"${rows[0].name}" is not empty: it still has ${eventCount} event(s) and ` +
+          `${userCount} member(s). Remove its members and delete its events first.`,
+        { event_count: eventCount, user_count: userCount }
+      );
+    }
+
+    await query("DELETE FROM councils WHERE council_id = ?", [councilId]);
+    res.status(204).send();
   })
 );
 

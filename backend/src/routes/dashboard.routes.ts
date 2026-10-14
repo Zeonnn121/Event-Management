@@ -8,18 +8,25 @@ const router = Router();
 
 // ── GET /api/dashboard/stats ──
 // Super admin: platform-wide stats.
-// Council lead: stats scoped to their council.
+// Council lead: stats scoped to their own council.
+// Member / council member: the same platform-wide read-only view as the super
+//   admin's numbers. They have no council of their own, so scoping them by
+//   `council_id = NULL` would return zeros for every figure.
 router.get(
   "/stats",
   requireAuth,
   asyncHandler(async (req: Request, res: Response) => {
-    const isSuperAdmin = req.user?.role === "super_admin";
+    const role = req.user?.role;
+    const isSuperAdmin = role === "super_admin";
     const councilId = req.user?.council_id ?? null;
 
+    // Only a leader who actually has a council is scoped to it.
+    const isCouncilScoped = role === "council_lead" && councilId !== null;
+
     // Council filter for SQL
-    const cf = isSuperAdmin ? "" : "AND e.council_id = ?";
-    const cfParam = isSuperAdmin ? [] : [councilId];
-    const cfWhere = isSuperAdmin ? "" : "WHERE e.council_id = ?";
+    const cf = isCouncilScoped ? "AND e.council_id = ?" : "";
+    const cfParam = isCouncilScoped ? [councilId] : [];
+    const cfWhere = isCouncilScoped ? "WHERE e.council_id = ?" : "";
 
     const [
       totalEvents,
@@ -59,22 +66,22 @@ router.get(
       ),
       // total_participants: distinct participants in registrations for scoped events
       query<RowDataPacket[]>(
-        isSuperAdmin
-          ? `SELECT COUNT(DISTINCT r.participant_id) AS count FROM registrations r`
-          : `SELECT COUNT(DISTINCT r.participant_id) AS count FROM registrations r JOIN events e ON r.event_id = e.event_id WHERE e.council_id = ?`,
-        isSuperAdmin ? [] : [councilId]
+        isCouncilScoped
+          ? `SELECT COUNT(DISTINCT r.participant_id) AS count FROM registrations r JOIN events e ON r.event_id = e.event_id WHERE e.council_id = ?`
+          : `SELECT COUNT(DISTINCT r.participant_id) AS count FROM registrations r`,
+        isCouncilScoped ? [councilId] : []
       ),
       query<RowDataPacket[]>(
-        isSuperAdmin
-          ? `SELECT COUNT(*) AS count FROM registrations WHERE status = 'registered'`
-          : `SELECT COUNT(*) AS count FROM registrations r JOIN events e ON r.event_id = e.event_id WHERE r.status = 'registered' AND e.council_id = ?`,
-        isSuperAdmin ? [] : [councilId]
+        isCouncilScoped
+          ? `SELECT COUNT(*) AS count FROM registrations r JOIN events e ON r.event_id = e.event_id WHERE r.status = 'registered' AND e.council_id = ?`
+          : `SELECT COUNT(*) AS count FROM registrations WHERE status = 'registered'`,
+        isCouncilScoped ? [councilId] : []
       ),
       query<RowDataPacket[]>(
-        isSuperAdmin
-          ? `SELECT COUNT(*) AS count FROM certificates WHERE status = 'issued'`
-          : `SELECT COUNT(*) AS count FROM certificates c JOIN events e ON c.event_id = e.event_id WHERE c.status = 'issued' AND e.council_id = ?`,
-        isSuperAdmin ? [] : [councilId]
+        isCouncilScoped
+          ? `SELECT COUNT(*) AS count FROM certificates c JOIN events e ON c.event_id = e.event_id WHERE c.status = 'issued' AND e.council_id = ?`
+          : `SELECT COUNT(*) AS count FROM certificates WHERE status = 'issued'`,
+        isCouncilScoped ? [councilId] : []
       ),
       query<RowDataPacket[]>(
         `SELECT e.category, COUNT(*) AS count
@@ -109,13 +116,14 @@ router.get(
         cfParam
       ),
       query<RowDataPacket[]>(
-        isSuperAdmin
+        isCouncilScoped
           ? `SELECT
                f.file_id, f.event_id, f.original_name, f.file_type,
                f.content_type, f.size_bytes, f.uploaded_at,
                e.title AS event_title
              FROM event_files f
              JOIN events e ON f.event_id = e.event_id
+             WHERE e.council_id = ?
              ORDER BY f.uploaded_at DESC, f.file_id DESC
              LIMIT 5`
           : `SELECT
@@ -124,10 +132,9 @@ router.get(
                e.title AS event_title
              FROM event_files f
              JOIN events e ON f.event_id = e.event_id
-             WHERE e.council_id = ?
              ORDER BY f.uploaded_at DESC, f.file_id DESC
              LIMIT 5`,
-        isSuperAdmin ? [] : [councilId]
+        isCouncilScoped ? [councilId] : []
       ),
       // Super admin extras
       isSuperAdmin

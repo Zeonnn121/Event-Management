@@ -6,7 +6,7 @@ import { query } from "../db";
 
 export interface AuthUser {
   user_id: number;
-  role: "super_admin" | "council_lead" | "member";
+  role: "super_admin" | "council_lead" | "council_member" | "member";
   email: string;
   name: string;
   council_id: number | null;
@@ -112,8 +112,8 @@ export function requireCouncilEventAccess(eventIdParam = "id") {
       return next();
     }
 
-    // Members cannot manage events
-    if (req.user.role === "member") {
+    // Read-only roles cannot manage events
+    if (req.user.role === "member" || req.user.role === "council_member") {
       return next(forbidden());
     }
 
@@ -154,7 +154,9 @@ export function requireCouncilFileAccess(fileIdParam = "fileId") {
   ): Promise<void> => {
     if (!req.user) return next(unauthorized());
     if (req.user.role === "super_admin") return next();
-    if (req.user.role === "member") return next(forbidden());
+    if (req.user.role === "member" || req.user.role === "council_member") {
+      return next(forbidden());
+    }
 
     const fileId = Number(req.params[fileIdParam]);
     if (!fileId) return next();
@@ -188,7 +190,9 @@ export function requireCouncilCertAccess(certIdParam = "id") {
   ): Promise<void> => {
     if (!req.user) return next(unauthorized());
     if (req.user.role === "super_admin") return next();
-    if (req.user.role === "member") return next(forbidden());
+    if (req.user.role === "member" || req.user.role === "council_member") {
+      return next(forbidden());
+    }
 
     const certId = Number(req.params[certIdParam]);
     if (!certId) return next();

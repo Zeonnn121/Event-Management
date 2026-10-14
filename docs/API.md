@@ -26,7 +26,19 @@
 
 ### Role hierarchy
 
-`admin` > `organizer` > `member`
+`super_admin` > `council_lead` > `council_member` > `member`
+
+| Role | Rights |
+| --- | --- |
+| `super_admin` | Everything. The only role that can delete a council. |
+| `council_lead` | Manages one council: creates and deletes its events, adds and removes its council members. |
+| `council_member` | Added to a council by that council's lead. Read-only, platform-wide view. |
+| `member` | Self-registered with no council. Read-only, platform-wide view. |
+
+A `council_lead` is scoped to a single council: the events and the user list it
+can see are limited to its own council. `council_member` and `member` are
+read-only observers with the same platform-wide visibility — they are refused by
+management endpoints.
 
 ---
 
@@ -82,11 +94,76 @@ Requires: any authenticated user.
 
 ---
 
+### POST /api/auth/register
+
+Public — no token required. Rate limited: 10 attempts per minute per IP.
+
+Self-registration. `role` decides what happens:
+
+- `member` — the account is created active immediately and a session token is
+  returned, exactly like login.
+- `council_lead` — the request is stored as `pending` and a super admin must
+  approve it (see [Registration Requests](#registration-requests)). No token is
+  returned, and the email cannot sign in until it is approved.
+
+**Request body**
+```json
+{
+  "name": "Ada Lead",
+  "email": "ada@council.edu",
+  "password": "Leader@123",
+  "role": "council_lead",
+  "council_name": "Coding Council",
+  "department": "CSE",
+  "message": "We will run weekly hack nights."
+}
+```
+
+Fields: `name` (2–100 chars), `email`, `password` (min 8 chars), `role`
+(`member` | `council_lead`), `department` (optional), `council_name` (required
+when `role` is `council_lead` — this is the council created on approval),
+`message` (optional, shown to the super admin).
+
+**Success — member** `201`
+```json
+{
+  "data": {
+    "token": "eyJhbGciOi...",
+    "user": {
+      "user_id": 8,
+      "name": "Fresh Member",
+      "email": "fresh@council.edu",
+      "role": "member",
+      "council_id": null,
+      "is_active": true
+    }
+  }
+}
+```
+
+**Success — council lead (queued)** `201`
+```json
+{
+  "data": {
+    "pending": true,
+    "message": "Your Council Lead request has been submitted. You can sign in once a Super Admin approves it."
+  }
+}
+```
+
+**Errors**
+- `400` — validation failed (for example `council_lead` without `council_name`)
+- `409` — email already registered, or a pending request already exists
+
+---
+
 ## Users
 
 ### POST /api/users
 
-Requires: `admin`.
+Requires: `super_admin`, or `council_lead`. A council lead may only create
+`council_member` users, and the account is always placed in the lead's own
+council — any `role` or `council_id` they send is ignored.
 
 **Request body**
 ```json
@@ -99,7 +176,7 @@ Requires: `admin`.
 }
 ```
 
-Fields: `name` (1–100 chars), `email` (valid email), `password` (min 8 chars), `role` (`admin` | `organizer` | `member`), `department` (optional, max 100 chars).
+Fields: `name` (1–100 chars), `email` (valid email), `password` (min 8 chars), `role` (`super_admin` | `council_lead` | `council_member` | `member`), `department` (optional, max 100 chars), `council_id` (optional; required in practice for `council_lead` and `council_member`).
 
 **Success** `201`
 ```json
@@ -108,7 +185,9 @@ Fields: `name` (1–100 chars), `email` (valid email), `password` (min 8 chars),
     "user_id": 2,
     "name": "Bob Organizer",
     "email": "bob@council.edu",
-    "role": "organizer",
+    "role": "member",
+    "council_id": 1,
+    "council_name": "Coding Council",
     "department": "Electrical Engineering",
     "created_at": "2025-09-15T10:00:00.000Z"
   }
@@ -116,18 +195,20 @@ Fields: `name` (1–100 chars), `email` (valid email), `password` (min 8 chars),
 ```
 
 **Errors**
-- `409` — email already exists
+- `409` — email already exists, or the target council already has an active lead
 
 ---
 
 ### GET /api/users
 
-Requires: `admin` or `organizer`.
+Requires: `super_admin` or `council_lead`. A council lead only ever receives
+users in their own council, and the `council_id` filter is ignored for them.
 
 **Query params**
 | Param | Type | Description |
 |---|---|---|
-| `role` | string | Filter by role (`admin`, `organizer`, `member`) |
+| `role` | string | Filter by role (`super_admin`, `council_lead`, `council_member`, `member`) — super admin only |
+| `council_id` | number | Filter by council — super admin only |
 
 **Success** `200`
 ```json
@@ -137,12 +218,165 @@ Requires: `admin` or `organizer`.
       "user_id": 1,
       "name": "Alice Admin",
       "email": "admin@council.edu",
-      "role": "admin",
+      "role": "super_admin",
       "department": "Computer Science",
       "created_at": "2025-01-01T00:00:00.000Z"
     }
   ]
 }
+```
+
+---
+
+### DELETE /api/users/:id/council
+
+Requires: `super_admin`, or `council_lead` for their own council.
+
+Removes someone from their council but **keeps their account**: they are
+detached and become a plain `member`, so this is reversible by re-adding them.
+This is the supported way to empty a council, because
+`DELETE /api/councils/:id` is refused while anyone still belongs to it.
+
+A council lead may only detach `council_member` users in their own council;
+anyone else is `403`, and users from another council are `404`.
+
+**Success** `200`
+```json
+{
+  "data": {
+    "user_id": 14,
+    "name": "Raj yadav",
+    "role": "member",
+    "council_id": null,
+    "message": "Removed from council"
+  }
+}
+```
+
+**Errors**
+- `400` — the user is not in a council
+- `403` — a lead tried to remove a lead, or a read-only role tried to remove anyone
+- `404` — user not found, or belongs to another council
+
+---
+
+## Councils
+
+| Method | Endpoint | Requires | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/councils` | any authenticated user | List councils with lead, `event_count` and `member_count` |
+| `GET` | `/api/councils/:id` | any authenticated user | One council (a lead is limited to its own) |
+| `POST` | `/api/councils` | `super_admin` | Create a council |
+| `PUT` | `/api/councils/:id` | `super_admin` | Update name / slug / description |
+| `PATCH` | `/api/councils/:id/status` | `super_admin` | Activate or deactivate |
+| `POST` | `/api/councils/:id/assign-lead` | `super_admin` | Attach an existing `council_lead` to the council |
+| `DELETE` | `/api/councils/:id` | `super_admin` | Delete a council |
+
+### DELETE /api/councils/:id
+
+Refuses to delete a council that still has events or people in it, so nothing is
+silently orphaned. Empty it first: detach its members with
+`DELETE /api/users/:id/council` and delete its events.
+
+**Success** `204` — no body
+
+**Errors**
+- `403` — not a super admin
+- `404` — council not found
+- `409` — council not empty
+```json
+{
+  "error": {
+    "message": "\"Coding Council\" is not empty: it still has 3 event(s) and 2 member(s). Remove its members and delete its events first.",
+    "details": { "event_count": 3, "user_count": 2 }
+  }
+}
+```
+
+---
+
+## Registration Requests
+
+The approval queue for people who registered as a Council Lead. Every endpoint
+requires `super_admin`.
+
+### GET /api/registration-requests
+
+**Query params**
+| Param | Type | Description |
+|---|---|---|
+| `status` | string | `pending` (default), `approved`, `rejected`, or `all` |
+
+**Success** `200`
+```json
+{
+  "data": [
+    {
+      "request_id": 1,
+      "name": "Ada Lead",
+      "email": "ada@council.edu",
+      "requested_role": "council_lead",
+      "council_name": "Coding Council",
+      "council_slug": "coding-council",
+      "department": "CSE",
+      "message": "We will run weekly hack nights.",
+      "status": "pending",
+      "requested_at": "2025-09-15T10:00:00.000Z",
+      "reviewed_at": null,
+      "review_note": null,
+      "reviewed_by_name": null
+    }
+  ]
+}
+```
+
+---
+
+### POST /api/registration-requests/:id/approve
+
+Creates the proposed council and the Council Lead account, then marks the request
+approved — all in one transaction.
+
+**Request body** (optional)
+```json
+{
+  "council_name": "Coding Council",
+  "council_slug": "coding-council"
+}
+```
+
+Both fields are optional overrides: omit them to use what the requester
+proposed. The slug is auto-suffixed (`coding-council-2`, …) when already taken.
+
+**Success** `200`
+```json
+{
+  "data": {
+    "request_id": 1,
+    "status": "approved",
+    "council_id": 6,
+    "council_name": "Coding Council",
+    "council_slug": "coding-council"
+  }
+}
+```
+
+**Errors**
+- `404` — request not found
+- `409` — request already approved/rejected, or the email now belongs to a user
+
+---
+
+### POST /api/registration-requests/:id/reject
+
+**Request body** (optional)
+```json
+{ "reason": "Please reapply next semester" }
+```
+
+**Success** `200`
+```json
+{ "data": { "request_id": 1, "status": "rejected" } }
 ```
 
 ---
@@ -324,9 +558,16 @@ Terminal states (`completed`, `cancelled`) are locked.
 
 ### DELETE /api/events/:id
 
-Requires: `admin`.
+Requires: `super_admin`, or `council_lead` for events in their own council.
+Another council's event returns `404` rather than `403`, so its existence is not
+leaked. Deleting an event also removes its registrations, attendance records,
+files and certificates (`ON DELETE CASCADE`).
 
 **Success** `204` — no body
+
+**Errors**
+- `403` — read-only role (`member` / `council_member`)
+- `404` — event not found, or it belongs to another council
 
 ---
 
@@ -890,6 +1131,11 @@ Requires: any authenticated user. Returns a presigned S3 GET URL valid for 5 min
 ### GET /api/dashboard/stats
 
 Requires: any authenticated user. Returns aggregate statistics and overview data.
+
+Scoping: a `council_lead` sees figures for its own council only. Everyone else
+— `super_admin`, `council_member` and `member` — sees the platform-wide totals.
+(Only the super admin additionally receives `total_councils`, `active_leads` and
+`council_breakdown`.)
 
 **Success** `200`
 ```json

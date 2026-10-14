@@ -59,7 +59,16 @@ app.get("/health/db", async (_req, res) => {
   }
 });
 
-// API routes
+// API routes.
+// Responses are per-user and change constantly, so they must never be stored by
+// the browser. Without this Express sets only an ETag, which leaves the browser
+// revalidating every call (the 304s in the request log) and free to reuse a
+// stored body — including one fetched under a different account.
+app.use("/api", (_req, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
+  next();
+});
+
 app.use("/api", routes);
 
 // Built frontend. Only in production: during local backend work the folder may

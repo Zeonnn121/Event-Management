@@ -8,7 +8,6 @@ import { validate } from "../middleware/validate";
 import {
   requireAuth,
   requireRole,
-  requireSuperAdmin,
   requireCouncilEventAccess,
 } from "../middleware/auth";
 
@@ -578,10 +577,13 @@ router.patch(
   })
 );
 
-// ── DELETE /api/events/:id (super_admin only) ──
+// ── DELETE /api/events/:id (super_admin, or council_lead for their own council) ──
+// A council lead can delete events belonging to their own council only;
+// requireCouncilEventAccess returns 404 for any other council's event.
 router.delete(
   "/:id",
-  requireSuperAdmin,
+  requireRole("super_admin", "council_lead"),
+  requireCouncilEventAccess(),
   asyncHandler(async (req: Request, res: Response) => {
     const eventId = Number(req.params.id);
     if (!eventId) throw badRequest("Invalid event ID");

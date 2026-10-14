@@ -267,7 +267,7 @@ export default function EventDetailPage() {
                   <h3 className="font-semibold text-text mb-2">Organizers</h3>
                   <ul className="space-y-1 text-muted">
                     {event.organizers.map((org) => (
-                      <li key={org.id}>{org.name}</li>
+                      <li key={org.organizer_id}>{org.user_name}</li>
                     ))}
                   </ul>
                 </div>
@@ -483,12 +483,12 @@ export default function EventDetailPage() {
                     <div className="bg-surface-2 grid grid-cols-4 gap-4 p-4 font-medium text-muted text-sm">
                       <div>Participant</div>
                       <div>Status</div>
-                      <div>Created</div>
+                      <div>Issued</div>
                       <div>Action</div>
                     </div>
                     <div className="divide-y divide-border">
                       {certificates.map((cert) => (
-                        <div key={cert.id} className="grid grid-cols-4 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm">
+                        <div key={cert.certificate_id} className="grid grid-cols-4 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm">
                           <div className="text-text">Participant {cert.participant_id}</div>
                           <div>
                             <Badge variant={cert.status === 'issued' ? 'success' : 'default'}>
@@ -496,7 +496,7 @@ export default function EventDetailPage() {
                             </Badge>
                           </div>
                           <div className="text-muted">
-                            {formatDate(cert.created_at)}
+                            {cert.issued_date ? formatDate(cert.issued_date) : '—'}
                           </div>
                           <div>
                             {cert.status === 'issued' && (

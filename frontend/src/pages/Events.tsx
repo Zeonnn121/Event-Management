@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
@@ -16,6 +16,9 @@ import type { Event, ApiResponse } from '@/lib/types';
 import { formatDate, formatTime } from '@/lib/format';
 import { useDebounce } from '@/hooks';
 import { cn } from '@/lib/cn';
+import { useAuth } from '@/stores/auth';
+import { Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 const statusVariants: Record<string, 'default' | 'success' | 'warning' | 'danger' | 'info'> = {
   planned: 'default',
@@ -42,6 +45,23 @@ export default function EventsPage() {
   const page = parseInt(searchParams.get('page') ?? '1', 10);
 
   const debouncedQ = useDebounce(q, 300);
+
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  // Council leads only ever see their own council's events, so a delete button
+  // on any visible card is safe; the API enforces the council scope anyway.
+  const canManageEvents = user?.role === 'super_admin' || user?.role === 'council_lead';
+
+  const deleteEventMutation = useMutation({
+    mutationFn: (eventId: number) =>
+      apiFetch(`/api/events/${eventId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      toast.success('Event deleted');
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['events', { q: debouncedQ, year, category, status, page }],
@@ -231,6 +251,31 @@ export default function EventsPage() {
                     </span>
                     <span className="text-primary font-medium">{event.category}</span>
                   </div>
+                  {canManageEvents && (
+                    <div className="mt-4 flex justify-end">
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        isLoading={
+                          deleteEventMutation.isPending &&
+                          deleteEventMutation.variables === event.id
+                        }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (
+                            window.confirm(
+                              `Delete "${event.title}"? This cannot be undone.`
+                            )
+                          ) {
+                            deleteEventMutation.mutate(event.id);
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        Delete
+                      </Button>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </motion.div>

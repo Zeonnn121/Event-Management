@@ -4,10 +4,11 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { query } from "../db";
 import { getConfig } from "../config";
-import { unauthorized } from "../utils/HttpError";
+import { conflict, unauthorized } from "../utils/HttpError";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { validate } from "../middleware/validate";
 import { requireAuth } from "../middleware/auth";
+import { slugify } from "../utils/slug";
 
 const router = Router();
 
@@ -76,6 +77,17 @@ router.post(
     );
 
     if (rows.length === 0) {
+      // A Council Lead cannot sign in until a Super Admin approves their
+      // request, so explain that instead of a generic bad-credentials error.
+      const pending = await query<any[]>(
+        "SELECT request_id FROM registration_requests WHERE email = ? AND status = 'pending'",
+        [normalized.email]
+      );
+      if (pending.length > 0) {
+        throw unauthorized(
+          "Your Council Lead request is still awaiting Super Admin approval"
+        );
+      }
       throw unauthorized("Invalid email or password");
     }
 
@@ -110,6 +122,107 @@ router.post(
           council_name: user.council_name,
           council_slug: user.council_slug,
         },
+      },
+    });
+  })
+);
+
+// ── POST /api/auth/register ──
+// Public self-registration. Two paths:
+//  - member: created active immediately and signed in (no approval needed).
+//  - council_lead: stored as a pending request; a super admin must approve it,
+//    which creates the proposed council and the lead account.
+const registerSchema = z
+  .object({
+    name: z.string().min(2).max(100),
+    email: z.string().email(),
+    password: z.string().min(8),
+    role: z.enum(["member", "council_lead"]),
+    department: z.string().max(100).optional(),
+    council_name: z.string().max(150).optional(),
+    message: z.string().max(1000).optional(),
+  })
+  .refine((data) => data.role !== "council_lead" || !!data.council_name?.trim(), {
+    message: "Council name is required to register as a Council Lead",
+    path: ["council_name"],
+  });
+
+router.post(
+  "/register",
+  rateLimiter,
+  validate(registerSchema, "body"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { name, email, password, role, department, council_name, message } =
+      req.body;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Reject an email that already belongs to an account or a live request.
+    const existingUsers = await query<any[]>(
+      "SELECT user_id FROM users WHERE email = ?",
+      [normalizedEmail]
+    );
+    if (existingUsers.length > 0) {
+      throw conflict("An account with this email already exists");
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    if (role === "member") {
+      const result = await query<any>(
+        "INSERT INTO users (name, email, password_hash, role, department) VALUES (?, ?, ?, 'member', ?)",
+        [name, normalizedEmail, passwordHash, department || null]
+      );
+
+      const rows = await query<any[]>(
+        `SELECT u.user_id, u.name, u.email, u.role, u.department, u.council_id, u.is_active,
+                c.name AS council_name, c.slug AS council_slug
+         FROM users u
+         LEFT JOIN councils c ON u.council_id = c.council_id
+         WHERE u.user_id = ?`,
+        [(result as any).insertId]
+      );
+
+      const user = rows[0];
+      const config = getConfig();
+      const token = jwt.sign(
+        { user_id: user.user_id, role: user.role },
+        config.JWT_SECRET,
+        { expiresIn: "8h" }
+      );
+
+      res.status(201).json({ data: { token, user } });
+      return;
+    }
+
+    // Council Lead: queue the request for super admin approval.
+    const pending = await query<any[]>(
+      "SELECT request_id FROM registration_requests WHERE email = ? AND status = 'pending'",
+      [normalizedEmail]
+    );
+    if (pending.length > 0) {
+      throw conflict("A Council Lead request for this email is already awaiting approval");
+    }
+
+    await query(
+      `INSERT INTO registration_requests
+         (name, email, password_hash, requested_role, council_name, council_slug, department, message)
+       VALUES (?, ?, ?, 'council_lead', ?, ?, ?, ?)`,
+      [
+        name,
+        normalizedEmail,
+        passwordHash,
+        council_name.trim(),
+        slugify(council_name),
+        department || null,
+        message || null,
+      ]
+    );
+
+    res.status(201).json({
+      data: {
+        pending: true,
+        message:
+          "Your Council Lead request has been submitted. You can sign in once a Super Admin approves it.",
       },
     });
   })

@@ -42,14 +42,21 @@ export default function CreateEventPage() {
 
   const mutation = useMutation({
     mutationFn: (data: CreateEventFormData) =>
-      apiFetch('/api/events', {
+      apiFetch<{ event_id: number }>('/api/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        // Untouched date/optional inputs submit as "", which the API rejects.
+        // Omit them so the backend applies its own default (null) instead.
+        body: JSON.stringify({
+          ...data,
+          description: data.description || undefined,
+          registration_deadline: data.registration_deadline || undefined,
+          coordinator_id: data.coordinator_id || undefined,
+        }),
       }),
-    onSuccess: (res: any) => {
+    onSuccess: (res) => {
       toast.success('Event created');
-      navigate(`/events/${res.data.id}`);
+      navigate(`/events/${res.event_id}`);
     },
     onError: (err: Error) => {
       toast.error(err.message);

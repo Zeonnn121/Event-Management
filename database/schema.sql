@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   name          VARCHAR(100) NOT NULL,
   email         VARCHAR(150) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
-  role          ENUM('super_admin','council_lead','member') NOT NULL DEFAULT 'member',
+  role          ENUM('super_admin','council_lead','council_member','member') NOT NULL DEFAULT 'member',
   council_id    INT UNSIGNED NULL,
   department    VARCHAR(100),
   is_active     BOOLEAN NOT NULL DEFAULT TRUE,
@@ -28,6 +28,30 @@ CREATE TABLE IF NOT EXISTS users (
   CONSTRAINT fk_users_council FOREIGN KEY (council_id) REFERENCES councils(council_id) ON DELETE SET NULL,
   INDEX idx_users_council (council_id),
   INDEX idx_users_role (role)
+) ENGINE=InnoDB;
+
+-- Self-registration requests. Members self-register and are created active
+-- immediately; anyone requesting the council_lead role stays here as 'pending'
+-- until a super admin approves (which also creates the proposed council) or
+-- rejects the request.
+CREATE TABLE IF NOT EXISTS registration_requests (
+  request_id     INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name           VARCHAR(100) NOT NULL,
+  email          VARCHAR(150) NOT NULL,
+  password_hash  VARCHAR(255) NOT NULL,
+  requested_role ENUM('member','council_lead') NOT NULL DEFAULT 'council_lead',
+  council_name   VARCHAR(150) NOT NULL,
+  council_slug   VARCHAR(100) NOT NULL,
+  department     VARCHAR(100) NULL,
+  message        TEXT NULL,
+  status         ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+  requested_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  reviewed_by    INT UNSIGNED NULL,
+  reviewed_at    TIMESTAMP NULL,
+  review_note    VARCHAR(255) NULL,
+  CONSTRAINT fk_req_reviewer FOREIGN KEY (reviewed_by) REFERENCES users(user_id) ON DELETE SET NULL,
+  INDEX idx_req_status (status),
+  INDEX idx_req_email (email)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS events (

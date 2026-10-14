@@ -83,12 +83,27 @@ async function main() {
       );
     }
 
-    // Member
+    // Council Members (added to a council by its lead)
+    const councilMemberData = [
+      ["Coding Member A",  "coding.member1@council.edu",   1, "CSE"],
+      ["Coding Member B",  "coding.member2@council.edu",   1, "IT"],
+      ["Robotics Member A", "robotics.member1@council.edu", 2, "ECE"],
+    ];
+    for (const m of councilMemberData) {
+      await conn.query(
+        "INSERT INTO users (name, email, password_hash, role, council_id, department) VALUES (?, ?, ?, 'council_member', ?, ?)",
+        [m[0], m[1], hash("Member@123"), m[2], m[3]]
+      );
+    }
+
+    // Plain member (no council)
     await conn.query(
       "INSERT INTO users (name, email, password_hash, role, council_id, department) VALUES (?, ?, ?, ?, ?, ?)",
       ["Member User", "member@council.edu", hash("Member@123"), "member", null, "ECE"]
     );
-    console.log("Seeded 7 users (1 super_admin, 5 council_leads, 1 member).");
+    console.log(
+      "Seeded 10 users (1 super_admin, 5 council_leads, 3 council_members, 1 member)."
+    );
 
     // ── Participants ──
     const departments = ["CSE", "IT", "ECE", "MECH"];

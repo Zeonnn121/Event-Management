@@ -166,6 +166,9 @@ Create the schema and seed demo data:
 
 ```bash
 npm run db:init      # applies database/schema.sql (add --reset to drop first)
+# On an existing database, apply the incremental migrations instead:
+#   mysql -u root -p tc_events < database/migrate_v3.sql
+#   mysql -u root -p tc_events < database/migrate_v4.sql
 npm run db:seed      # 4 users, 20 participants, sample events, etc.
 ```
 
@@ -181,9 +184,10 @@ Health checks: `GET /health` and `GET /health/db`.
 
 | Role | Email | Password |
 | --- | --- | --- |
-| admin | `admin@council.edu` | `Admin@123` |
-| organizer | `organizer1@council.edu` | `Organizer@123` |
-| organizer | `organizer2@council.edu` | `Organizer@123` |
+| super_admin | `superadmin@council.edu` | `Admin@123` |
+| council_lead | `coding@council.edu` | `Organizer@123` |
+| council_lead | `robotics@council.edu` | `Organizer@123` |
+| council_member | `coding.member1@council.edu` | `Member@123` |
 | member | `member@council.edu` | `Member@123` |
 
 ### 3. Frontend placeholder
@@ -217,12 +221,16 @@ npm run build        # copies index.html + public/** into dist/
 
 Base URL: `http://localhost:4000/api`. All responses use the `{ "data": ... }`
 envelope; errors use `{ "error": { "message": ..., "details": ... } }`. Send the
-JWT as `Authorization: Bearer <token>`. Roles are `admin` > `organizer` > `member`.
+JWT as `Authorization: Bearer <token>`. Roles are `super_admin` > `council_lead` >
+`council_member` > `member`. `council_lead` accounts are scoped to a single
+council; `council_member` and `member` are read-only.
 
 | Group | Endpoints |
 | --- | --- |
-| Auth | `POST /auth/login`, `GET /auth/me` |
-| Users | `POST /users`, `GET /users` |
+| Auth | `POST /auth/login`, `POST /auth/register`, `GET /auth/me` |
+| Users | `POST /users`, `GET /users`, `DELETE /users/:id/council` — super admin, plus council leads scoped to their own council |
+| Councils | `GET /councils`, `POST /councils`, `PUT /councils/:id`, `PATCH /councils/:id/status`, `POST /councils/:id/assign-lead`, `DELETE /councils/:id` (super admin; refused while the council still has events or members) |
+| Registration requests | `GET /registration-requests`, `POST /registration-requests/:id/approve`, `POST /registration-requests/:id/reject` — super admin Council Lead approval queue |
 | Events | list/detail/create/update, `PATCH /events/:id/status`, delete, organizers |
 | Participants | list/create/detail/update |
 | Registrations | register, list, cancel (waitlist auto-promotes), bulk attendance |

@@ -112,12 +112,12 @@ export default function CertificatesPage() {
                   <div>{viewMode === 'event' ? 'Event' : 'Participant'}</div>
                   <div>{viewMode === 'event' ? 'Participant' : 'Event'}</div>
                   <div>Status</div>
-                  <div>Created</div>
+                  <div>Issued</div>
                   <div>Action</div>
                 </div>
                 <div className="divide-y divide-border">
                   {certificates.map((cert) => (
-                    <motion.div key={cert.id} variants={variants.staggerItem} className="grid grid-cols-5 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm">
+                    <motion.div key={cert.certificate_id} variants={variants.staggerItem} className="grid grid-cols-5 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm">
                       <div className="text-text">{viewMode === 'event' ? `Event ${cert.event_id}` : `Participant ${cert.participant_id}`}</div>
                       <div className="text-text">{viewMode === 'event' ? `Participant ${cert.participant_id}` : `Event ${cert.event_id}`}</div>
                       <div>
@@ -126,7 +126,7 @@ export default function CertificatesPage() {
                         </Badge>
                       </div>
                       <div className="text-muted">
-                        {formatDate(cert.created_at)}
+                        {cert.issued_date ? formatDate(cert.issued_date) : '—'}
                       </div>
                       <div>
                         {cert.status === 'issued' && (

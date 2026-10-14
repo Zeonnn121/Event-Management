@@ -15,8 +15,19 @@ export function validate(
       }));
       return next(badRequest("Validation failed", details));
     }
-    // Replace with parsed (and coerced/defaulted) values
-    (req as any)[target] = result.data;
+    // Replace with parsed (and coerced/defaulted) values.
+    // Express 5 exposes req.query as a getter, so a plain assignment throws;
+    // shadow it with an own property instead.
+    if (target === "query") {
+      Object.defineProperty(req, "query", {
+        value: result.data,
+        writable: true,
+        configurable: true,
+        enumerable: true,
+      });
+    } else {
+      (req as any)[target] = result.data;
+    }
     next();
   };
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -110,6 +110,12 @@ export default function LoginPage() {
               Sign in
             </Button>
           </form>
+          <p className="text-sm text-muted text-center mt-6">
+            New here?{' '}
+            <Link to="/register" className="text-primary hover:underline">
+              Create an account
+            </Link>
+          </p>
           {import.meta.env.DEV && (
             <div className="space-y-4">
               <Button

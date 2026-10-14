@@ -1,7 +1,7 @@
-import { Outlet } from 'react-router-dom';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useState } from 'react';
-import { Menu, X, LayoutDashboard, Calendar, Users, Award, FileText, Settings, LogOut, Moon, Sun } from 'lucide-react';
+import { Menu, X, LayoutDashboard, Calendar, Users, Award, FileText, ShieldCheck, Building2, LogOut, Moon, Sun } from 'lucide-react';
 import { useAuth } from '@/stores/auth';
 import { Button } from './ui/Button';
 import { cn } from '@/lib/cn';
@@ -14,14 +14,22 @@ const navItems = [
   { href: '/certificates', label: 'Certificates', icon: Award },
 ];
 
-const adminNavItems = [
+// Council leads manage their own committee here; super admins manage everyone.
+const usersNavItems = [
   { href: '/users', label: 'Users', icon: FileText },
+];
+
+// Only the super admin manages councils and reviews incoming Council Lead requests.
+const superAdminNavItems = [
+  { href: '/councils', label: 'Councils', icon: Building2 },
+  { href: '/approvals', label: 'Approvals', icon: ShieldCheck },
 ];
 
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
   const { user, clear } = useAuth();
+  const location = useLocation();
 
   const handleThemeToggle = () => {
     const root = document.documentElement;
@@ -41,7 +49,14 @@ export function AppShell() {
     window.location.href = '/login';
   };
 
-  const currentNav = user?.role === 'admin' ? [...navItems, ...adminNavItems] : navItems;
+  const isSuperAdmin = user?.role === 'super_admin';
+  const canManageUsers = isSuperAdmin || user?.role === 'council_lead';
+
+  const currentNav = [
+    ...navItems,
+    ...(canManageUsers ? usersNavItems : []),
+    ...(isSuperAdmin ? superAdminNavItems : []),
+  ];
 
   return (
     <div className="flex h-screen bg-bg">
@@ -63,19 +78,19 @@ export function AppShell() {
             {/* Nav items */}
             <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
               {currentNav.map((item) => (
-                <a
+                <Link
                   key={item.href}
-                  href={item.href}
+                  to={item.href}
                   className={cn(
                     'flex items-center gap-3 px-4 py-2 rounded-md transition-colors',
-                    window.location.pathname === item.href
+                    location.pathname === item.href
                       ? 'bg-primary text-primary-fg'
                       : 'text-text hover:bg-surface-2'
                   )}
                 >
                   <item.icon className="h-5 w-5" />
                   <span>{item.label}</span>
-                </a>
+                </Link>
               ))}
             </nav>
 
@@ -83,7 +98,9 @@ export function AppShell() {
             <div className="p-4 border-t border-border space-y-2">
               <div className="text-sm">
                 <p className="font-medium text-text">{user?.name}</p>
-                <p className="text-xs text-muted capitalize">{user?.role}</p>
+                <p className="text-xs text-muted capitalize">
+                  {user?.role?.replace('_', ' ')}
+                </p>
               </div>
               <div className="flex gap-2">
                 <Button size="sm" variant="ghost" onClick={handleThemeToggle} className="flex-1">

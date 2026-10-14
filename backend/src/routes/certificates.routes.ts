@@ -37,6 +37,58 @@ const createCertificatesSchema = z.object({
   participant_ids: z.array(z.number().int().positive()).min(1),
 });
 
+// ── GET /api/certificates ──
+// Flat list of all certificates, used by the top-level Certificates page.
+// Super admins and members see all (members read-only); council leads see only
+// certificates belonging to their own council's events, matching GET /api/events.
+router.get(
+  "/certificates",
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const scopeCouncilId =
+      req.user?.role === "council_lead" && req.user.council_id
+        ? req.user.council_id
+        : null;
+
+    const conditions: string[] = [];
+    const params: (number | string)[] = [];
+
+    if (scopeCouncilId) {
+      conditions.push("e.council_id = ?");
+      params.push(scopeCouncilId);
+    }
+
+    if (req.query.status === "pending" || req.query.status === "issued") {
+      conditions.push("c.status = ?");
+      params.push(req.query.status);
+    }
+
+    if (req.query.event_id) {
+      conditions.push("c.event_id = ?");
+      params.push(Number(req.query.event_id));
+    }
+
+    const whereClause =
+      conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
+
+    const rows = await query<RowDataPacket[]>(
+      `SELECT
+         c.certificate_id, c.certificate_code, c.event_id, c.participant_id,
+         c.s3_key, c.status, c.issued_date,
+         p.name AS participant_name, p.email AS participant_email,
+         e.title AS event_title, e.event_date, e.status AS event_status
+       FROM certificates c
+       JOIN participants p ON c.participant_id = p.participant_id
+       JOIN events e ON c.event_id = e.event_id
+       ${whereClause}
+       ORDER BY e.event_date DESC, c.certificate_id ASC`,
+      params
+    );
+
+    res.json({ data: rows });
+  })
+);
+
 // ── POST /api/events/:id/certificates (super_admin or council_lead) ──
 router.post(
   "/events/:id/certificates",

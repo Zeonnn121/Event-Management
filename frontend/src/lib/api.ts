@@ -1,4 +1,5 @@
 import type { ApiError, ApiResponse } from './types';
+import { useAuth } from '../stores/auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000';
 
@@ -33,15 +34,24 @@ export async function apiFetch<T>(
   const url = `${API_BASE_URL}${path}`;
 
   const headers = new Headers(fetchOptions.headers || {});
-  if (!skipAuth && authToken) {
-    headers.set('Authorization', `Bearer ${authToken}`);
+
+  // Prefer the persisted session store over the module-level copy: after a full
+  // page reload `authToken` is still null until App's effect runs, but the store
+  // is already rehydrated from localStorage. Without this the first request
+  // after a reload goes out unauthenticated and comes back 401.
+  const token = useAuth.getState().token ?? authToken;
+  if (!skipAuth && token) {
+    headers.set('Authorization', `Bearer ${token}`);
   }
+  const sentToken = headers.has('Authorization');
 
   try {
     const response = await fetch(url, { ...fetchOptions, headers });
 
     if (response.status === 401 && !skipAuth) {
-      onUnauthorized?.();
+      // Only treat a 401 as an expired session if this request actually carried
+      // a token; otherwise it is just an unauthenticated call, not a logout.
+      if (sentToken) onUnauthorized?.();
       throw new ApiErrorClass(401, 'Unauthorized');
     }
 

@@ -1,9 +1,59 @@
+export type Role = 'super_admin' | 'council_lead' | 'council_member' | 'member';
+
+/// Only these two can be chosen during self-registration; council members are
+/// added by the Council Lead of their council.
+export type RequestableRole = 'member' | 'council_lead';
+
 export type User = {
-  id: number;
+  user_id: number;
   name: string;
   email: string;
-  role: 'admin' | 'organizer' | 'member';
-  department?: string;
+  role: Role;
+  department?: string | null;
+  council_id?: number | null;
+  council_name?: string | null;
+  council_slug?: string | null;
+  is_active?: boolean;
+  created_at?: string;
+};
+
+export type Council = {
+  council_id: number;
+  name: string;
+  slug: string;
+  description?: string | null;
+  is_active: boolean;
+  lead_user_id?: number | null;
+  lead_name?: string | null;
+  lead_email?: string | null;
+  event_count?: number;
+  member_count?: number;
+};
+
+/// A pending/approved/rejected self-registration by someone asking to lead a council.
+export type RegistrationRequest = {
+  request_id: number;
+  name: string;
+  email: string;
+  requested_role: RequestableRole;
+  council_name: string;
+  council_slug: string;
+  department?: string | null;
+  message?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  requested_at: string;
+  reviewed_at?: string | null;
+  review_note?: string | null;
+  reviewed_by_name?: string | null;
+};
+
+export type Organizer = {
+  organizer_id: number;
+  event_id?: number;
+  user_id: number;
+  user_name: string;
+  email?: string;
+  responsibility: string;
 };
 
 export type Event = {
@@ -19,7 +69,7 @@ export type Event = {
   capacity: number;
   registration_deadline?: string;
   status: 'planned' | 'registration_open' | 'ongoing' | 'completed' | 'cancelled';
-  organizers?: User[];
+  organizers?: Organizer[];
   registration_count?: number;
   file_count?: number;
   outcome?: Outcome | null;
@@ -54,12 +104,15 @@ export type Registration = {
 };
 
 export type Certificate = {
-  id: number;
+  certificate_id: number;
+  certificate_code: string;
   event_id: number;
   participant_id: number;
   status: 'pending' | 'issued';
-  created_at: string;
-  issued_at?: string;
+  s3_key?: string | null;
+  issued_date: string | null;
+  participant_name?: string;
+  event_title?: string;
 };
 
 export type FileRecord = {

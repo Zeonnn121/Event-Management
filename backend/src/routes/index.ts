@@ -8,12 +8,14 @@ import filesRoutes from "./files.routes";
 import certificatesRoutes from "./certificates.routes";
 import dashboardRoutes from "./dashboard.routes";
 import councilsRoutes from "./councils.routes";
+import registrationRequestsRoutes from "./registrationRequests.routes";
 
 const router = Router();
 
 router.use("/auth", authRoutes);
 router.use("/users", usersRoutes);
 router.use("/councils", councilsRoutes);
+router.use("/registration-requests", registrationRequestsRoutes);
 router.use("/events", eventsRoutes);
 router.use("/participants", participantsRoutes);
 

@@ -50,6 +50,146 @@ Attach **all three** of the following to the instance role:
 7. **Open `http://<INSTANCE_PUBLIC_IP>/`** in a browser. Port 80 is redirected
    to the app's port 3000 by an iptables rule.
 
+## Updating a running deployment (checklist)
+
+Use this whenever you change `backend/src/**`, `frontend/src/**`, or
+`database/*.sql` and need a running instance to pick the change up.
+
+### Step 1 — Work out what actually changed
+
+| Changed | Schema step needed? |
+| --- | --- |
+| Only `backend/src`, `frontend/src`, docs | No — skip to Step 3 |
+| Anything in `database/` | Yes — do Step 2 first |
+
+The schema must land **before** the new code runs: the new routes query the new
+tables, so deploying code first leaves those endpoints returning 500s.
+
+### Step 2 — RDS schema (only when `database/` changed)
+
+RDS is private (`public access = No`, and `db-sg` accepts only from `app-sg`), so
+this runs **from the instance** over Session Manager, exactly like
+`schema-import.md`.
+
+**2a. Find the schema version currently in RDS**
+
+```bash
+mysql -h <RDS_ENDPOINT> -u <DB_USER> -p -e "SHOW COLUMNS FROM users; SHOW TABLES;" tc_events
+```
+
+Read the `role` column, then check whether `registration_requests` is listed:
+
+| `users.role` includes | `registration_requests` | Run |
+| --- | --- | --- |
+| `council_member` | present | Nothing — already current |
+| `enum('super_admin','council_lead','member')` (no `council_member`) | present | `migrate_v4.sql` |
+| `enum('super_admin','council_lead','member')` | missing | `migrate_v3.sql`, then `migrate_v4.sql` |
+| `enum('admin','organizer','member')` | either | `migrate_v2.sql`, then `migrate_v3.sql`, then `migrate_v4.sql` |
+
+> **Do not re-import `schema.sql` to upgrade an existing database.** Every
+> statement in it is `CREATE TABLE IF NOT EXISTS`, so it silently skips tables
+> that already exist — including `users`, whose role `ENUM` is precisely what
+> `migrate_v2.sql` has to change. `schema.sql` is for a **fresh** RDS instance
+> only.
+
+Both migration files are written to be safe to re-run, so applying one you are
+unsure about is harmless.
+
+**2b. Upload the migration from Windows**
+
+```powershell
+aws s3 cp database/migrate_v2.sql "s3://<BUCKET_NAME>/deploy/migrate_v2.sql" --region ap-south-1
+aws s3 cp database/migrate_v3.sql "s3://<BUCKET_NAME>/deploy/migrate_v3.sql" --region ap-south-1
+aws s3 cp database/migrate_v4.sql "s3://<BUCKET_NAME>/deploy/migrate_v4.sql" --region ap-south-1
+```
+
+**2c. Apply it on the instance**
+
+```bash
+sudo dnf install -y mariadb105                     # only if the client is missing
+aws s3 cp s3://<BUCKET_NAME>/deploy/migrate_v2.sql ~/migrate_v2.sql   # only if 2a said so
+aws s3 cp s3://<BUCKET_NAME>/deploy/migrate_v3.sql ~/migrate_v3.sql
+aws s3 cp s3://<BUCKET_NAME>/deploy/migrate_v4.sql ~/migrate_v4.sql
+mysql -h <RDS_ENDPOINT> -u <DB_USER> -p tc_events < ~/migrate_v2.sql
+mysql -h <RDS_ENDPOINT> -u <DB_USER> -p tc_events < ~/migrate_v3.sql
+mysql -h <RDS_ENDPOINT> -u <DB_USER> -p tc_events < ~/migrate_v4.sql
+```
+
+`migrate_v4.sql` also converts anyone who was sitting in a council as a plain
+`member` into a `council_member`, so `user_id` values and all existing data are
+preserved.
+
+**2d. Verify**
+
+```bash
+mysql -h <RDS_ENDPOINT> -u <DB_USER> -p -e "SHOW TABLES;" tc_events   # registration_requests present
+```
+
+### Step 3 — Build and upload the code
+
+```powershell
+cd deploy
+.\build-and-upload.ps1 -BucketName <BUCKET_NAME>
+```
+
+This rebuilds **both** apps and bundles `backend/dist` + `frontend/dist`, so it
+covers UI changes too. It uses `npm ci`, so the lockfiles must be committed.
+
+An app-only change needs **no SSM, IAM, S3-bucket, or Lambda changes** — no new
+config keys are read at boot.
+
+### Step 4 — Put the new bundle on the instance
+
+Either approach works:
+
+**Option A — replace the instance** with `user-data.sh` as user data. That script
+is idempotent by design: it wipes `/opt/tc-app`, re-extracts the bundle,
+reinstalls dependencies, restarts pm2 and re-applies the iptables rule.
+
+**Option B — update the running instance in place.** This mirrors steps 4–7 of
+`user-data.sh`:
+
+```bash
+sudo aws s3 cp s3://<BUCKET_NAME>/deploy/app.tar.gz /tmp/app.tar.gz --region ap-south-1
+sudo find /opt/tc-app -mindepth 1 -delete
+sudo tar -xzf /tmp/app.tar.gz -C /opt/tc-app
+sudo chown -R ec2-user:ec2-user /opt/tc-app
+sudo -u ec2-user bash -lc "cd /opt/tc-app/backend && npm ci --omit=dev"
+sudo -u ec2-user bash -lc "pm2 restart tc-backend && pm2 save"
+```
+
+The `npm ci` step is not optional: the clean extract leaves `node_modules`
+empty, so the app will not boot without it.
+
+### Step 5 — Verify
+
+```bash
+curl -s http://localhost:3000/health       # {"status":"ok"}
+curl -s http://localhost:3000/health/db    # {"status":"ok","db":"up"}
+sudo tail -n 50 /var/log/tc-app/out.log
+```
+
+Then in the browser at `http://<INSTANCE_PUBLIC_IP>/`:
+
+- [ ] Sign in as the super admin.
+- [ ] **Users → Create User** succeeds. (This was the original bug: the page sent
+      a role the API rejects, and the route was gated on a role that no longer
+      exists.)
+- [ ] **Approvals** loads and lists pending Council Lead requests. A 500 here
+      means Step 2 was skipped and `registration_requests` is missing.
+- [ ] A Council Lead account sees **My Council Members** and can add one.
+- [ ] **Councils** (super admin) lists councils; Delete is refused with an
+explanation until the council has no events and no members.
+- [ ] A Council Lead can delete an event of their own council, and remove a
+      council member from their council.
+
+### Rolling back
+
+`app.tar.gz` is overwritten on every upload, so keep the previous bundle if you
+may need to revert — re-upload the old tarball and repeat Step 4. The migrations
+are additive: dropping `registration_requests` is the only schema undo, and it
+discards pending requests.
+
 ## Things that will bite you
 
 - **No secrets live in this folder.** Every value is a placeholder, and the app
@@ -65,5 +205,7 @@ Attach **all three** of the following to the instance role:
 - **`build-and-upload.ps1` uses `npm ci`**, which deletes `node_modules` and
   installs strictly from `package-lock.json`. Commit the lockfile after any
   dependency change or the build will fail.
-- **The bundle does not include `database/schema.sql`** — that is deliberate,
-  since RDS is set up once and separately from app deploys.
+- **The bundle does not include `database/*.sql`** — that is deliberate, since
+  RDS is set up once and separately from app deploys. Migration files reach the
+  instance over the same S3 hop as `schema.sql`; see *Updating a running
+  deployment* above.

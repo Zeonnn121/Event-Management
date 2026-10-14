@@ -74,10 +74,10 @@ router.get(
   })
 );
 
-// ── POST /api/participants (admin/organizer) ──
+// ── POST /api/participants (super_admin/council_lead) ──
 router.post(
   "/",
-  requireRole("admin", "organizer"),
+  requireRole("super_admin", "council_lead"),
   validate(participantCreateSchema, "body"),
   asyncHandler(async (req: Request, res: Response) => {
     const { name, email, department, year, phone } = req.body;
@@ -140,10 +140,10 @@ router.get(
   })
 );
 
-// ── PUT /api/participants/:id (admin/organizer) ──
+// ── PUT /api/participants/:id (super_admin/council_lead) ──
 router.put(
   "/:id",
-  requireRole("admin", "organizer"),
+  requireRole("super_admin", "council_lead"),
   validate(participantUpdateSchema, "body"),
   asyncHandler(async (req: Request, res: Response) => {
     const participantId = Number(req.params.id);
