@@ -1,4 +1,4 @@
-# Technical Council — Event Management System
+Event Management System
 
 A full-stack platform for a college technical council to plan events, manage
 participants and registrations, track attendance, upload event media, issue PDF
