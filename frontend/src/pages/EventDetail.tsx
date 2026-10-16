@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -55,15 +55,12 @@ type OutcomeFormData = z.infer<typeof outcomeSchema>;
 
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const eventId = parseInt(id ?? '0', 10);
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const isMember = user?.role === 'member';
-  const canManageEvent = user?.role === 'super_admin' || user?.role === 'council_lead';
   const [activeTab, setActiveTab] = useState<'overview' | 'registrations' | 'attendance' | 'files' | 'certificates' | 'outcome'>('overview');
-  const [selfRegOpen, setSelfRegOpen] = useState(false);
-  const [selfRegYear, setSelfRegYear] = useState('');
-  const [selfRegDept, setSelfRegDept] = useState('');
 
   const { data: event, isLoading, error, refetch } = useQuery({
     queryKey: ['event', eventId],
@@ -113,6 +110,12 @@ export default function EventDetailPage() {
     queryFn: () => apiFetch<Outcome>(`/api/events/${eventId}/outcome`),
   });
 
+  const { data: memberProfile } = useQuery({
+    queryKey: ['profile'],
+    queryFn: () => apiFetch<{ year: number | null; department: string | null }>('/api/profile'),
+    enabled: isMember,
+  });
+
   const statusMutation = useMutation({
     mutationFn: (status: string) =>
       apiFetch(`/api/events/${eventId}/status`, {
@@ -144,7 +147,6 @@ export default function EventDetailPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['event-registrations', eventId] });
       queryClient.invalidateQueries({ queryKey: ['event', eventId] });
-      setSelfRegOpen(false);
       toast.success(data?.status === 'waitlisted' ? 'Added to waitlist!' : 'Registered successfully!');
     },
     onError: (err: Error) => toast.error(err.message),
@@ -335,58 +337,25 @@ export default function EventDetailPage() {
             <CardHeader>
               <div className="flex justify-between items-center">
                 <CardTitle>Registrations</CardTitle>
-                {canManageEvent && (
-                  <Button size="sm" variant="primary">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Registration
-                  </Button>
-                )}
                 {isMember && (event?.status === 'planned' || event?.status === 'registration_open') && (
-                  <Dialog open={selfRegOpen} onOpenChange={setSelfRegOpen}>
-                    <DialogTrigger asChild>
-                      <Button size="sm" variant="primary">
-                        <Plus className="h-4 w-4 mr-2" />
-                        Register for Event
+                  memberProfile?.year && memberProfile?.department ? (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      isLoading={selfRegMutation.isPending}
+                      onClick={() => selfRegMutation.mutate({ year: memberProfile.year!, department: memberProfile.department! })}
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Register for Event
+                    </Button>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <p className="text-sm text-muted">Complete your profile to register.</p>
+                      <Button size="sm" variant="secondary" onClick={() => navigate('/my-info')}>
+                        Go to Profile
                       </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Register for {event?.title}</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4 pt-2">
-                        <Input
-                          label="Your Year (1–4)"
-                          type="number"
-                          min={1}
-                          max={4}
-                          value={selfRegYear}
-                          onChange={(e) => setSelfRegYear(e.target.value)}
-                          placeholder="e.g. 2"
-                        />
-                        <Input
-                          label="Department (optional)"
-                          value={selfRegDept}
-                          onChange={(e) => setSelfRegDept(e.target.value)}
-                          placeholder="e.g. Computer Science"
-                        />
-                        <Button
-                          variant="primary"
-                          className="w-full"
-                          isLoading={selfRegMutation.isPending}
-                          onClick={() => {
-                            const y = parseInt(selfRegYear, 10);
-                            if (!y || y < 1 || y > 4) {
-                              toast.error('Please enter a valid year (1–4)');
-                              return;
-                            }
-                            selfRegMutation.mutate({ year: y, department: selfRegDept || undefined });
-                          }}
-                        >
-                          Confirm Registration
-                        </Button>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
+                    </div>
+                  )
                 )}
               </div>
             </CardHeader>

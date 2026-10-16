@@ -11,7 +11,6 @@ import EventDetailPage from './pages/EventDetail';
 import CreateEventPage from './pages/CreateEvent';
 import EditEventPage from './pages/EditEvent';
 import ParticipantsPage from './pages/Participants';
-import CreateParticipantPage from './pages/CreateParticipant';
 import ParticipantDetailPage from './pages/ParticipantDetail';
 import CertificatesPage from './pages/Certificates';
 import UsersPage from './pages/Users';
@@ -53,9 +52,8 @@ export function AppRoutes() {
         <Route path="/events/:id" element={<EventDetailPage />} />
         <Route path="/events/:id/edit" element={<ProtectedRoute roles={['super_admin', 'council_lead']} element={<EditEventPage />} />} />
         <Route path="/my-events" element={<ProtectedRoute roles={['super_admin', 'council_lead', 'council_member']} element={<MyEventsPage />} />} />
-        <Route path="/participants" element={<ParticipantsPage />} />
-        <Route path="/participants/new" element={<ProtectedRoute roles={['super_admin', 'council_lead']} element={<CreateParticipantPage />} />} />
-        <Route path="/participants/:id" element={<ParticipantDetailPage />} />
+        <Route path="/participants" element={<ProtectedRoute roles={['super_admin']} element={<ParticipantsPage />} />} />
+        <Route path="/participants/:id" element={<ProtectedRoute roles={['super_admin']} element={<ParticipantDetailPage />} />} />
         <Route path="/certificates" element={<CertificatesPage />} />
         <Route path="/users" element={<ProtectedRoute roles={['super_admin', 'council_lead']} element={<UsersPage />} />} />
         <Route path="/councils" element={<ProtectedRoute roles={['super_admin']} element={<CouncilsPage />} />} />

@@ -19,7 +19,7 @@ router.get(
     const user = req.user!;
 
     const rows = await query<RowDataPacket[]>(
-      "SELECT participant_id, name, email, department, year, phone, gender FROM participants WHERE email = ?",
+      "SELECT participant_id, name, email, department, year, phone FROM participants WHERE email = ?",
       [user.email]
     );
 
@@ -33,7 +33,6 @@ router.get(
           department: null,
           year: null,
           phone: null,
-          gender: null,
         },
       });
       return;
@@ -49,7 +48,6 @@ router.get(
 const profileSchema = z.object({
   name: z.string().min(1).max(100),
   phone: z.string().max(20).optional().nullable(),
-  gender: z.enum(["male", "female", "other"]).optional().nullable(),
   year: z.number().int().min(1).max(4),
   department: z.string().min(1).max(100),
 });
@@ -59,7 +57,7 @@ router.put(
   validate(profileSchema, "body"),
   asyncHandler(async (req: Request, res: Response) => {
     const user = req.user!;
-    const { name, phone, gender, year, department } = req.body as z.infer<typeof profileSchema>;
+    const { name, phone, year, department } = req.body as z.infer<typeof profileSchema>;
 
     // Sync name back to users table
     await query("UPDATE users SET name = ? WHERE user_id = ?", [name, user.user_id]);
@@ -72,18 +70,18 @@ router.put(
 
     if (existing.length > 0) {
       await query(
-        "UPDATE participants SET name = ?, department = ?, year = ?, phone = ?, gender = ? WHERE email = ?",
-        [name, department, year, phone ?? null, gender ?? null, user.email]
+        "UPDATE participants SET name = ?, department = ?, year = ?, phone = ? WHERE email = ?",
+        [name, department, year, phone ?? null, user.email]
       );
     } else {
       await query<ResultSetHeader>(
-        "INSERT INTO participants (name, email, department, year, phone, gender) VALUES (?, ?, ?, ?, ?, ?)",
-        [name, user.email, department, year, phone ?? null, gender ?? null]
+        "INSERT INTO participants (name, email, department, year, phone) VALUES (?, ?, ?, ?, ?)",
+        [name, user.email, department, year, phone ?? null]
       );
     }
 
     const updated = await query<RowDataPacket[]>(
-      "SELECT participant_id, name, email, department, year, phone, gender FROM participants WHERE email = ?",
+      "SELECT participant_id, name, email, department, year, phone FROM participants WHERE email = ?",
       [user.email]
     );
 

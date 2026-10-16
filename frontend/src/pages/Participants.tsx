@@ -108,9 +108,8 @@ export default function ParticipantsPage() {
       exit="exit"
       className="p-4 md:p-6 lg:p-8 max-w-7xl"
     >
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-6">
         <h1 className="text-3xl font-semibold text-text">Participants</h1>
-        <Button variant="primary" onClick={() => navigate('/participants/new')}>Add Participant</Button>
       </div>
 
       {/* Search and filters */}
@@ -168,8 +167,7 @@ export default function ParticipantsPage() {
       ) : participants.length === 0 ? (
         <EmptyState
           title="No participants found"
-          description={q || department || year ? 'Try adjusting your filters.' : 'Add your first participant to get started.'}
-          action={<Button variant="primary" onClick={() => navigate('/participants/new')}>Add Participant</Button>}
+          description={q || department || year ? 'Try adjusting your filters.' : 'No participants yet.'}
         />
       ) : (
         <motion.div

@@ -18,7 +18,6 @@ interface Profile {
   department: string | null;
   year: number | null;
   phone: string | null;
-  gender: 'male' | 'female' | 'other' | null;
 }
 
 const yearOptions = [
@@ -33,12 +32,6 @@ const branchOptions = [
   { value: 'COMPS', label: 'COMPS' },
   { value: 'ECS', label: 'ECS' },
   { value: 'MECH', label: 'MECH' },
-];
-
-const genderOptions = [
-  { value: 'male', label: 'Male' },
-  { value: 'female', label: 'Female' },
-  { value: 'other', label: 'Other' },
 ];
 
 export default function MyInfoPage() {
@@ -59,7 +52,6 @@ export default function MyInfoPage() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
-  const [gender, setGender] = useState('');
   const [year, setYear] = useState('');
   const [department, setDepartment] = useState('');
 
@@ -70,13 +62,12 @@ export default function MyInfoPage() {
     setFirstName(first);
     setLastName(last);
     setPhone(profile.phone ?? '');
-    setGender(profile.gender ?? '');
     setYear(profile.year ? String(profile.year) : '');
     setDepartment(profile.department ?? '');
   }, [profile]);
 
   const saveMutation = useMutation({
-    mutationFn: (body: { name: string; phone?: string; gender?: string; year: number; department: string }) =>
+    mutationFn: (body: { name: string; phone?: string; year: number; department: string }) =>
       apiFetch<Profile>('/api/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -99,7 +90,6 @@ export default function MyInfoPage() {
     saveMutation.mutate({
       name,
       phone: phone || undefined,
-      gender: gender || undefined,
       year: parseInt(year, 10),
       department,
     });
@@ -158,13 +148,6 @@ export default function MyInfoPage() {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="e.g. 9876543210"
-              />
-              <Select
-                label="Gender (optional)"
-                value={gender}
-                onChange={(e) => setGender(e.target.value)}
-                options={genderOptions}
-                placeholder="Select gender"
               />
               <Select
                 label="Year"

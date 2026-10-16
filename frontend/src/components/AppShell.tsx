@@ -10,7 +10,6 @@ import { AnimatePresence } from 'framer-motion';
 const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/events', label: 'Events', icon: Calendar },
-  { href: '/participants', label: 'Participants', icon: Users },
   { href: '/certificates', label: 'Certificates', icon: Award },
 ];
 
@@ -27,6 +26,7 @@ const usersNavItems = [
 
 // Only the super admin manages councils and reviews incoming Council Lead requests.
 const superAdminNavItems = [
+  { href: '/participants', label: 'Participants', icon: Users },
   { href: '/councils', label: 'Councils', icon: Building2 },
   { href: '/approvals', label: 'Approvals', icon: ShieldCheck },
 ];

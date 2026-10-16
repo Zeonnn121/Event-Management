@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/Dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/Dialog';
 import { variants } from '@/lib/motion';
 import { apiFetch, apiFetchEnvelope } from '@/lib/api';
 import type { Event, ApiResponse } from '@/lib/types';
@@ -57,14 +57,12 @@ export default function EventsPage() {
   // Fetch saved profile so members don't need to retype year/dept every time
   const { data: memberProfile } = useQuery({
     queryKey: ['profile'],
-    queryFn: () => apiFetch<{ year: number | null; department: string | null; name: string; email: string; phone: string | null; gender: string | null }>('/api/profile'),
+    queryFn: () => apiFetch<{ year: number | null; department: string | null; name: string; email: string; phone: string | null }>('/api/profile'),
     enabled: isMember,
   });
 
   // Self-registration dialog state (one dialog shared, keyed by event)
-  const [regEventId, setRegEventId] = useState<number | null>(null);
-  const [regYear, setRegYear] = useState('');
-  const [regDept, setRegDept] = useState('');
+  const [profilePromptOpen, setProfilePromptOpen] = useState(false);
 
   const selfRegMutation = useMutation({
     mutationFn: ({ eventId, year, department }: { eventId: number; year: number; department?: string }) =>
@@ -74,9 +72,6 @@ export default function EventsPage() {
         body: JSON.stringify({ year, ...(department ? { department } : {}) }),
       }),
     onSuccess: (data) => {
-      setRegEventId(null);
-      setRegYear('');
-      setRegDept('');
       queryClient.invalidateQueries({ queryKey: ['events'] });
       toast.success(data?.status === 'waitlisted' ? 'Added to waitlist!' : 'Registered successfully!');
     },
@@ -85,14 +80,11 @@ export default function EventsPage() {
 
   const openReg = (e: React.MouseEvent, eventId: number) => {
     e.stopPropagation();
-    // If profile is complete, register directly without a dialog
     if (memberProfile?.year && memberProfile?.department) {
       selfRegMutation.mutate({ eventId, year: memberProfile.year, department: memberProfile.department });
-      return;
+    } else {
+      setProfilePromptOpen(true);
     }
-    setRegYear('');
-    setRegDept('');
-    setRegEventId(eventId);
   };
 
   const deleteEventMutation = useMutation({
@@ -364,50 +356,22 @@ export default function EventsPage() {
           </div>
         </div>
       )}
-      {/* Self-registration dialog for members */}
-      {isMember && (
-        <Dialog open={regEventId !== null} onOpenChange={(open) => { if (!open) setRegEventId(null); }}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                Register for {events.find((e) => e.event_id === regEventId)?.title ?? 'Event'}
-              </DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 pt-2">
-              <Input
-                label="Your Year (1–4)"
-                type="number"
-                min={1}
-                max={4}
-                value={regYear}
-                onChange={(e) => setRegYear(e.target.value)}
-                placeholder="e.g. 2"
-              />
-              <Input
-                label="Department (optional)"
-                value={regDept}
-                onChange={(e) => setRegDept(e.target.value)}
-                placeholder="e.g. Computer Science"
-              />
-              <Button
-                variant="primary"
-                className="w-full"
-                isLoading={selfRegMutation.isPending}
-                onClick={() => {
-                  const y = parseInt(regYear, 10);
-                  if (!y || y < 1 || y > 4) {
-                    toast.error('Please enter a valid year (1–4)');
-                    return;
-                  }
-                  selfRegMutation.mutate({ eventId: regEventId!, year: y, department: regDept || undefined });
-                }}
-              >
-                Confirm Registration
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
+
+      {/* Profile incomplete prompt */}
+      <Dialog open={profilePromptOpen} onOpenChange={setProfilePromptOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Complete your profile first</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted pt-1 pb-4">
+            You need to fill in your year and branch in your profile before you can register for events.
+          </p>
+          <div className="flex gap-3 justify-end">
+            <Button variant="secondary" onClick={() => setProfilePromptOpen(false)}>Cancel</Button>
+            <Button variant="primary" onClick={() => { setProfilePromptOpen(false); navigate('/my-info'); }}>Go to Profile</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 }
