@@ -9,6 +9,7 @@ import certificatesRoutes from "./certificates.routes";
 import dashboardRoutes from "./dashboard.routes";
 import councilsRoutes from "./councils.routes";
 import registrationRequestsRoutes from "./registrationRequests.routes";
+import profileRoutes from "./profile.routes";
 
 const router = Router();
 
@@ -30,5 +31,6 @@ router.use("/", filesRoutes);
 router.use("/", certificatesRoutes);
 
 router.use("/dashboard", dashboardRoutes);
+router.use("/profile", profileRoutes);
 
 export default router;

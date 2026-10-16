@@ -18,6 +18,7 @@ import UsersPage from './pages/Users';
 import CouncilsPage from './pages/Councils';
 import ApprovalsPage from './pages/Approvals';
 import MyEventsPage from './pages/MyEvents';
+import MyInfoPage from './pages/MyInfo';
 import NotFoundPage from './pages/NotFound';
 import { AppShell } from './components/AppShell';
 
@@ -59,6 +60,7 @@ export function AppRoutes() {
         <Route path="/users" element={<ProtectedRoute roles={['super_admin', 'council_lead']} element={<UsersPage />} />} />
         <Route path="/councils" element={<ProtectedRoute roles={['super_admin']} element={<CouncilsPage />} />} />
         <Route path="/approvals" element={<ProtectedRoute roles={['super_admin']} element={<ApprovalsPage />} />} />
+        <Route path="/my-info" element={<MyInfoPage />} />
       </Route>
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

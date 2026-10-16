@@ -54,6 +54,13 @@ export default function EventsPage() {
   const canManageEvents = user?.role === 'super_admin' || user?.role === 'council_lead';
   const isMember = user?.role === 'member';
 
+  // Fetch saved profile so members don't need to retype year/dept every time
+  const { data: memberProfile } = useQuery({
+    queryKey: ['profile'],
+    queryFn: () => apiFetch<{ year: number | null; department: string | null; name: string; email: string; phone: string | null; gender: string | null }>('/api/profile'),
+    enabled: isMember,
+  });
+
   // Self-registration dialog state (one dialog shared, keyed by event)
   const [regEventId, setRegEventId] = useState<number | null>(null);
   const [regYear, setRegYear] = useState('');
@@ -78,6 +85,11 @@ export default function EventsPage() {
 
   const openReg = (e: React.MouseEvent, eventId: number) => {
     e.stopPropagation();
+    // If profile is complete, register directly without a dialog
+    if (memberProfile?.year && memberProfile?.department) {
+      selfRegMutation.mutate({ eventId, year: memberProfile.year, department: memberProfile.department });
+      return;
+    }
     setRegYear('');
     setRegDept('');
     setRegEventId(eventId);
