@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/Dialog';
 import { variants } from '@/lib/motion';
 import { apiFetch, apiFetchEnvelope } from '@/lib/api';
 import type { Event, ApiResponse } from '@/lib/types';
@@ -17,7 +18,7 @@ import { formatDate, formatTime } from '@/lib/format';
 import { useDebounce } from '@/hooks';
 import { cn } from '@/lib/cn';
 import { useAuth } from '@/stores/auth';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
 const statusVariants: Record<string, 'default' | 'success' | 'warning' | 'danger' | 'info'> = {
@@ -51,6 +52,36 @@ export default function EventsPage() {
   // Council leads only ever see their own council's events, so a delete button
   // on any visible card is safe; the API enforces the council scope anyway.
   const canManageEvents = user?.role === 'super_admin' || user?.role === 'council_lead';
+  const isMember = user?.role === 'member';
+
+  // Self-registration dialog state (one dialog shared, keyed by event)
+  const [regEventId, setRegEventId] = useState<number | null>(null);
+  const [regYear, setRegYear] = useState('');
+  const [regDept, setRegDept] = useState('');
+
+  const selfRegMutation = useMutation({
+    mutationFn: ({ eventId, year, department }: { eventId: number; year: number; department?: string }) =>
+      apiFetch<{ registration_id: number; status: string }>(`/api/events/${eventId}/registrations/self`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year, ...(department ? { department } : {}) }),
+      }),
+    onSuccess: (data) => {
+      setRegEventId(null);
+      setRegYear('');
+      setRegDept('');
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      toast.success(data?.status === 'waitlisted' ? 'Added to waitlist!' : 'Registered successfully!');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const openReg = (e: React.MouseEvent, eventId: number) => {
+    e.stopPropagation();
+    setRegYear('');
+    setRegDept('');
+    setRegEventId(eventId);
+  };
 
   const deleteEventMutation = useMutation({
     mutationFn: (eventId: number) =>
@@ -145,7 +176,9 @@ export default function EventsPage() {
     >
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-semibold text-text">Events</h1>
-        <Button variant="primary" onClick={() => navigate('/events/new')}>New Event</Button>
+        {canManageEvents && (
+          <Button variant="primary" onClick={() => navigate('/events/new')}>New Event</Button>
+        )}
       </div>
 
       {/* Search and filters */}
@@ -276,6 +309,18 @@ export default function EventsPage() {
                       </Button>
                     </div>
                   )}
+                  {isMember && (event.status === 'planned' || event.status === 'registration_open') && (
+                    <div className="mt-4 flex justify-end">
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onClick={(e) => openReg(e, event.event_id)}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Register
+                      </Button>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </motion.div>
@@ -306,6 +351,50 @@ export default function EventsPage() {
             </Button>
           </div>
         </div>
+      )}
+      {/* Self-registration dialog for members */}
+      {isMember && (
+        <Dialog open={regEventId !== null} onOpenChange={(open) => { if (!open) setRegEventId(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                Register for {events.find((e) => e.event_id === regEventId)?.title ?? 'Event'}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+              <Input
+                label="Your Year (1–4)"
+                type="number"
+                min={1}
+                max={4}
+                value={regYear}
+                onChange={(e) => setRegYear(e.target.value)}
+                placeholder="e.g. 2"
+              />
+              <Input
+                label="Department (optional)"
+                value={regDept}
+                onChange={(e) => setRegDept(e.target.value)}
+                placeholder="e.g. Computer Science"
+              />
+              <Button
+                variant="primary"
+                className="w-full"
+                isLoading={selfRegMutation.isPending}
+                onClick={() => {
+                  const y = parseInt(regYear, 10);
+                  if (!y || y < 1 || y > 4) {
+                    toast.error('Please enter a valid year (1–4)');
+                    return;
+                  }
+                  selfRegMutation.mutate({ eventId: regEventId!, year: y, department: regDept || undefined });
+                }}
+              >
+                Confirm Registration
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </motion.div>
   );

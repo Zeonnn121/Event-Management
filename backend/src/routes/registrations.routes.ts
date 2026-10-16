@@ -242,6 +242,115 @@ router.patch(
   })
 );
 
+// ── POST /api/events/:id/registrations/self (any authenticated member) ──
+// Finds-or-creates a participant row by the user's email, then registers them.
+const selfRegistrationSchema = z.object({
+  year: z.number().int().min(1).max(4),
+  department: z.string().min(1).optional(),
+});
+
+router.post(
+  "/events/:id/registrations/self",
+  requireAuth,
+  validate(selfRegistrationSchema, "body"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const eventId = Number(req.params.id);
+    if (!eventId) throw badRequest("Invalid event ID");
+
+    const user = req.user!;
+    const { year, department } = req.body as { year: number; department?: string };
+
+    // Verify event exists and is open for registration
+    const eventRows = await query<RowDataPacket[]>(
+      "SELECT event_id, status, capacity, registration_deadline FROM events WHERE event_id = ?",
+      [eventId]
+    );
+    if (eventRows.length === 0) throw notFound("Event not found");
+
+    const event = eventRows[0];
+    if (event.status !== "planned" && event.status !== "registration_open") {
+      throw badRequest(`Cannot register for an event with status '${event.status}'`);
+    }
+    if (event.registration_deadline) {
+      const today = new Date().toISOString().slice(0, 10);
+      if (today > event.registration_deadline) {
+        throw badRequest("Registration deadline has passed");
+      }
+    }
+
+    // Find or create participant by email
+    const existing = await query<RowDataPacket[]>(
+      "SELECT participant_id FROM participants WHERE email = ?",
+      [user.email]
+    );
+
+    let participantId: number;
+    if (existing.length > 0) {
+      participantId = existing[0].participant_id as number;
+    } else {
+      const dept = department ?? "Unknown";
+      const inserted = await query<ResultSetHeader>(
+        "INSERT INTO participants (name, email, department, year) VALUES (?, ?, ?, ?)",
+        [user.name, user.email, dept, year]
+      );
+      participantId = inserted.insertId;
+    }
+
+    // Capacity/waitlist transaction (same pattern as admin endpoint)
+    const conn = await getPool().getConnection();
+    try {
+      await conn.beginTransaction();
+
+      const [lockedRows] = await conn.query<RowDataPacket[]>(
+        "SELECT capacity FROM events WHERE event_id = ? FOR UPDATE",
+        [eventId]
+      );
+      const capacity = lockedRows[0].capacity as number;
+
+      const [countRows] = await conn.query<RowDataPacket[]>(
+        "SELECT COUNT(*) AS cnt FROM registrations WHERE event_id = ? AND status = 'registered'",
+        [eventId]
+      );
+      const registeredCount = (countRows[0] as RowDataPacket).cnt as number;
+
+      const status = registeredCount >= capacity ? "waitlisted" : "registered";
+
+      let insertId: number;
+      try {
+        const [result] = await conn.query<ResultSetHeader>(
+          "INSERT INTO registrations (event_id, participant_id, status) VALUES (?, ?, ?)",
+          [eventId, participantId, status]
+        );
+        insertId = result.insertId;
+      } catch (err: unknown) {
+        if (
+          err instanceof Error &&
+          "code" in err &&
+          (err as { code: string }).code === "ER_DUP_ENTRY"
+        ) {
+          await conn.rollback();
+          throw conflict("You are already registered for this event");
+        }
+        throw err;
+      }
+
+      await conn.commit();
+
+      const created = await query<RowDataPacket[]>(
+        "SELECT * FROM registrations WHERE registration_id = ?",
+        [insertId]
+      );
+
+      res.status(201).json({ data: created[0] });
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+  })
+);
+
 // ── PUT /api/events/:id/attendance (super_admin or council_lead) ──
 router.put(
   "/events/:id/attendance",

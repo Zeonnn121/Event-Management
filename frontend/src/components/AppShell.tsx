@@ -1,7 +1,7 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useState } from 'react';
-import { Menu, X, LayoutDashboard, Calendar, Users, Award, FileText, ShieldCheck, Building2, LogOut, Moon, Sun } from 'lucide-react';
+import { Menu, X, LayoutDashboard, Calendar, CalendarCheck, Users, Award, FileText, ShieldCheck, Building2, LogOut, Moon, Sun } from 'lucide-react';
 import { useAuth } from '@/stores/auth';
 import { Button } from './ui/Button';
 import { cn } from '@/lib/cn';
@@ -13,6 +13,9 @@ const navItems = [
   { href: '/participants', label: 'Participants', icon: Users },
   { href: '/certificates', label: 'Certificates', icon: Award },
 ];
+
+// Shown to super_admin, council_lead, council_member — their scoped events view
+const myEventsNavItem = { href: '/my-events', label: 'My Events', icon: CalendarCheck };
 
 // Council leads manage their own committee here; super admins manage everyone.
 const usersNavItems = [
@@ -51,9 +54,11 @@ export function AppShell() {
 
   const isSuperAdmin = user?.role === 'super_admin';
   const canManageUsers = isSuperAdmin || user?.role === 'council_lead';
+  const hasMyEvents = isSuperAdmin || user?.role === 'council_lead' || user?.role === 'council_member';
 
   const currentNav = [
     ...navItems,
+    ...(hasMyEvents ? [myEventsNavItem] : []),
     ...(canManageUsers ? usersNavItems : []),
     ...(isSuperAdmin ? superAdminNavItems : []),
   ];
@@ -72,7 +77,7 @@ export function AppShell() {
           >
             {/* Logo */}
             <div className="p-6 border-b border-border">
-              <h1 className="text-xl font-bold text-primary">Tech Council</h1>
+              <h1 className="text-xl font-bold text-primary">Event Management</h1>
             </div>
 
             {/* Nav items */}

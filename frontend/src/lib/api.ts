@@ -101,6 +101,42 @@ export async function apiFetch<T>(
   }
 }
 
-export function apiFetchEnvelope<T>(path: string, options?: RequestInit) {
-  return apiFetch<ApiResponse<T>>(path, options);
+// Returns the full envelope { data, page, limit, total } without stripping .data.
+// Use this for paginated list endpoints that return sibling fields alongside `data`.
+export async function apiFetchEnvelope<T>(
+  path: string,
+  options?: RequestInit
+): Promise<ApiResponse<T>> {
+  const { skipAuth: _skip, ...fetchOptions } = (options || {}) as RequestInit & { skipAuth?: boolean };
+  const url = `${API_BASE_URL}${path}`;
+
+  const headers = new Headers(fetchOptions.headers || {});
+  const token = useAuth.getState().token ?? authToken;
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+
+  const response = await fetch(url, { ...fetchOptions, headers });
+
+  if (response.status === 401) {
+    if (token) onUnauthorized?.();
+    throw new ApiErrorClass(401, 'Unauthorized');
+  }
+
+  const contentType = response.headers.get('content-type');
+  let data: unknown;
+  if (contentType?.includes('application/json')) {
+    data = await response.json();
+  } else {
+    data = await response.text();
+  }
+
+  if (!response.ok) {
+    const errorData = data as Record<string, unknown> | null;
+    const message =
+      (errorData?.error as Record<string, unknown>)?.message?.toString() ||
+      String(data) ||
+      `HTTP ${response.status}`;
+    throw new ApiErrorClass(response.status, message);
+  }
+
+  return data as ApiResponse<T>;
 }

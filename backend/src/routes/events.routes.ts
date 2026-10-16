@@ -116,18 +116,6 @@ async function checkSchedulingConflict(
   return rows.length > 0 ? rows[0] as { event_id: number; title: string; start_time: string; end_time: string } : null;
 }
 
-// ── Helper: get council scope filter ──
-// Returns a SQL condition and params for filtering events by the user's council.
-// Super admin: no filter (sees all). Council lead: only their council.
-function getCouncilFilter(user: Express.Request["user"]): { clause: string; params: (number | string)[] } {
-  if (!user || user.role === "super_admin") return { clause: "", params: [] };
-  if (user.role === "council_lead" && user.council_id) {
-    return { clause: "AND e.council_id = ?", params: [user.council_id] };
-  }
-  // members see all events (read-only enforcement elsewhere)
-  return { clause: "", params: [] };
-}
-
 // ── GET /api/events/meta/filters ──
 router.get(
   "/meta/filters",
@@ -181,14 +169,8 @@ router.get(
     const params: (string | number)[] = [];
     let outcomesJoin = "LEFT JOIN outcomes o ON e.event_id = o.event_id";
 
-    // Council scope enforcement — council leads can only see their council's events
-    const councilFilter = getCouncilFilter(req.user);
-    if (councilFilter.clause) {
-      // Convert "AND e.council_id = ?" to a proper condition
-      conditions.push("e.council_id = ?");
-      params.push(councilFilter.params[0]);
-    } else if (req.user?.role === "super_admin" && req.query.council_id) {
-      // Super admin can filter by a specific council
+    // Optional council filter (any role can pass council_id to narrow results)
+    if (req.query.council_id) {
       conditions.push("e.council_id = ?");
       params.push(Number(req.query.council_id));
     }
@@ -277,6 +259,74 @@ router.get(
       LIMIT ? OFFSET ?
     `;
     const rows = await query<RowDataPacket[]>(dataSql, [...params, limit, offset]);
+
+    res.json({ data: rows, page, limit, total });
+  })
+);
+
+// ── GET /api/events/mine ──
+// super_admin → events they created (created_by = their user_id)
+// council_lead / council_member → events belonging to their council
+router.get(
+  "/mine",
+  asyncHandler(async (req: Request, res: Response) => {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+    const offset = (page - 1) * limit;
+
+    const conditions: string[] = [];
+    const params: (string | number)[] = [];
+
+    if (req.user?.role === "super_admin") {
+      conditions.push("e.created_by = ?");
+      params.push(req.user.user_id);
+    } else if (
+      (req.user?.role === "council_lead" || req.user?.role === "council_member") &&
+      req.user.council_id
+    ) {
+      conditions.push("e.council_id = ?");
+      params.push(req.user.council_id);
+    } else {
+      // member or unassigned — no personal scope, return empty
+      return res.json({ data: [], page, limit, total: 0 });
+    }
+
+    if (req.query.q && typeof req.query.q === "string") {
+      conditions.push("(e.title LIKE ? OR e.description LIKE ?)");
+      const q = `%${req.query.q}%`;
+      params.push(q, q);
+    }
+    if (req.query.year) {
+      conditions.push("YEAR(e.event_date) = ?");
+      params.push(Number(req.query.year));
+    }
+    if (req.query.category && typeof req.query.category === "string") {
+      conditions.push("e.category = ?");
+      params.push(req.query.category);
+    }
+    if (req.query.status && typeof req.query.status === "string") {
+      conditions.push("e.status = ?");
+      params.push(req.query.status);
+    }
+
+    const whereClause = "WHERE " + conditions.join(" AND ");
+
+    const countRows = await query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS total FROM events e ${whereClause}`,
+      params
+    );
+    const total = countRows[0].total;
+
+    const rows = await query<RowDataPacket[]>(
+      `SELECT e.*, coun.name AS council_name,
+         (SELECT COUNT(*) FROM registrations r WHERE r.event_id = e.event_id AND r.status = 'registered') AS registration_count
+       FROM events e
+       LEFT JOIN councils coun ON e.council_id = coun.council_id
+       ${whereClause}
+       ORDER BY e.event_date DESC, e.start_time DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
 
     res.json({ data: rows, page, limit, total });
   })

@@ -20,6 +20,7 @@ import { toast } from 'sonner';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useAuth } from '@/stores/auth';
 
 const statusTransitions: Record<string, string[]> = {
   planned: ['registration_open', 'cancelled'],
@@ -56,7 +57,13 @@ export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
   const eventId = parseInt(id ?? '0', 10);
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isMember = user?.role === 'member';
+  const canManageEvent = user?.role === 'super_admin' || user?.role === 'council_lead';
   const [activeTab, setActiveTab] = useState<'overview' | 'registrations' | 'attendance' | 'files' | 'certificates' | 'outcome'>('overview');
+  const [selfRegOpen, setSelfRegOpen] = useState(false);
+  const [selfRegYear, setSelfRegYear] = useState('');
+  const [selfRegDept, setSelfRegDept] = useState('');
 
   const { data: event, isLoading, error, refetch } = useQuery({
     queryKey: ['event', eventId],
@@ -65,7 +72,8 @@ export default function EventDetailPage() {
 
   const { data: registrations } = useQuery({
     queryKey: ['event-registrations', eventId],
-    enabled: event?.event_id === eventId && activeTab === 'registrations',
+    // Members can't access the registrations list endpoint (verifyEventAccess blocks them)
+    enabled: event?.event_id === eventId && activeTab === 'registrations' && !isMember,
     queryFn: () => apiFetch<Registration[]>(`/api/events/${eventId}/registrations`),
   });
 
@@ -124,6 +132,22 @@ export default function EventDetailPage() {
     onError: (err: Error) => {
       toast.error(err.message);
     },
+  });
+
+  const selfRegMutation = useMutation({
+    mutationFn: ({ year, department }: { year: number; department?: string }) =>
+      apiFetch<{ registration_id: number; status: string }>(`/api/events/${eventId}/registrations/self`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year, ...(department ? { department } : {}) }),
+      }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['event-registrations', eventId] });
+      queryClient.invalidateQueries({ queryKey: ['event', eventId] });
+      setSelfRegOpen(false);
+      toast.success(data?.status === 'waitlisted' ? 'Added to waitlist!' : 'Registered successfully!');
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   const outcomeMutation = useMutation({
@@ -309,12 +333,61 @@ export default function EventDetailPage() {
         {activeTab === 'registrations' && (
           <Card>
             <CardHeader>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <CardTitle>Registrations</CardTitle>
-                <Button size="sm" variant="primary">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Registration
-                </Button>
+                {canManageEvent && (
+                  <Button size="sm" variant="primary">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Registration
+                  </Button>
+                )}
+                {isMember && (event?.status === 'planned' || event?.status === 'registration_open') && (
+                  <Dialog open={selfRegOpen} onOpenChange={setSelfRegOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="sm" variant="primary">
+                        <Plus className="h-4 w-4 mr-2" />
+                        Register for Event
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Register for {event?.title}</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4 pt-2">
+                        <Input
+                          label="Your Year (1–4)"
+                          type="number"
+                          min={1}
+                          max={4}
+                          value={selfRegYear}
+                          onChange={(e) => setSelfRegYear(e.target.value)}
+                          placeholder="e.g. 2"
+                        />
+                        <Input
+                          label="Department (optional)"
+                          value={selfRegDept}
+                          onChange={(e) => setSelfRegDept(e.target.value)}
+                          placeholder="e.g. Computer Science"
+                        />
+                        <Button
+                          variant="primary"
+                          className="w-full"
+                          isLoading={selfRegMutation.isPending}
+                          onClick={() => {
+                            const y = parseInt(selfRegYear, 10);
+                            if (!y || y < 1 || y > 4) {
+                              toast.error('Please enter a valid year (1–4)');
+                              return;
+                            }
+                            selfRegMutation.mutate({ year: y, department: selfRegDept || undefined });
+                          }}
+                        >
+                          Confirm Registration
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                )}
               </div>
             </CardHeader>
             <CardContent>
@@ -335,7 +408,7 @@ export default function EventDetailPage() {
                     <div className="divide-y divide-border">
                       {registrations.map((reg) => (
                         <div key={reg.registration_id} className="grid grid-cols-4 gap-4 p-4 hover:bg-surface-2 transition-colors text-sm">
-                          <div className="text-text">Participant {reg.participant_id}</div>
+                          <div className="text-text">{reg.name ?? `Participant ${reg.participant_id}`}</div>
                           <div>
                             <Badge variant={registrationStatusVariants[reg.status]}>
                               {reg.status}

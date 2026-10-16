@@ -17,6 +17,7 @@ import CertificatesPage from './pages/Certificates';
 import UsersPage from './pages/Users';
 import CouncilsPage from './pages/Councils';
 import ApprovalsPage from './pages/Approvals';
+import MyEventsPage from './pages/MyEvents';
 import NotFoundPage from './pages/NotFound';
 import { AppShell } from './components/AppShell';
 
@@ -50,6 +51,7 @@ export function AppRoutes() {
         <Route path="/events/new" element={<ProtectedRoute roles={['super_admin', 'council_lead']} element={<CreateEventPage />} />} />
         <Route path="/events/:id" element={<EventDetailPage />} />
         <Route path="/events/:id/edit" element={<ProtectedRoute roles={['super_admin', 'council_lead']} element={<EditEventPage />} />} />
+        <Route path="/my-events" element={<ProtectedRoute roles={['super_admin', 'council_lead', 'council_member']} element={<MyEventsPage />} />} />
         <Route path="/participants" element={<ParticipantsPage />} />
         <Route path="/participants/new" element={<ProtectedRoute roles={['super_admin', 'council_lead']} element={<CreateParticipantPage />} />} />
         <Route path="/participants/:id" element={<ParticipantDetailPage />} />
